@@ -1,0 +1,19 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+python-dotenv = "*"
+mistralai = "*"
+groq = "*"
+openai = "*"
+ddgs = "*"
+crawl4ai = "*"
+litellm = "*"
+prompt-toolkit = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.12"
