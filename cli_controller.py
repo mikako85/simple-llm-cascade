@@ -2,6 +2,7 @@ import os
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from agent import ChatAgent
+import config
 
 
 class SessionCLIController:
@@ -10,8 +11,6 @@ class SessionCLIController:
 
 
     def print_help(self):
-        
-        
         print('\n=== КОМАНДЫ УПРАВЛЕНИЯ СЕССИЯМИ ===')
         print(' /sessions - список сохранённых сессий')
         print(' /load <имя> - загрузить сессию')
@@ -23,6 +22,24 @@ class SessionCLIController:
 
     def interactive_startup(self):
         '''Интерактивное меню при старте программы (опциональный выбор/удаление сессий)'''
+
+        available_models = config.app_config.models
+        default_route = config.app_config.settings.default_route
+
+        print('\n=== ВЫБОР МОДЕЛИ (МАРШРУТА) ===')
+        print(f'По умолчанию: {default_route}')
+        for idx, m in enumerate(available_models):
+            marker = ' (по умолчанию)' if m.model_name == default_route else ''
+            print(f'{idx + 1}. {m.model_name} [{m.litellm_model}]{marker}')
+
+        model_choice = input('Choice model"s number or Enter for default: ').strip()
+        if model_choice.isdigit():
+            idx = int(model_choice) - 1
+            if 0 <= idx < len(available_models):
+                selected_model_name = available_models[idx].model_name
+                self.agent.primary_model = selected_model_name
+                print(f'Выбрана модель: {selected_model_name}')
+
         self.print_help()
         sessions = self.agent.memory.list_sessions()
         if not sessions:

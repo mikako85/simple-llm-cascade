@@ -1,68 +1,46 @@
 import os
 from dotenv import load_dotenv
+from config_loader import AppConfig, load_config
 
 load_dotenv()
 
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+try:
+    app_config: AppConfig = load_config('models.yaml')
+except (FileNotFoundError, ValueError) as e:
+    print(f"Error loading config: {e}. Need to create models.yaml file")
+    raise
 
-API_KEY = OPENROUTER_API_KEY
+TEMPERATURE = app_config.settings.temperature
+MAX_TOOL_ITERATIONS = app_config.settings.max_tool_iterations
 
-PRIMARY_MODEL = 'groq/openai/gpt-oss-120b'
-OPENROUTER_FALLBACK_MODEL = 'openrouter/nvidia/nemotron-3-super-120b-a12b:free'
-DEEPSEEK_FALLBACK_MODEL = 'deepseek/deepseek-flash'
-
-ROUTER_PRIMARY_ROUTE = 'groq-primary'
-ROUTER_OPENROUTER_ROUTE = 'openrouter-fallback'
-ROUTER_DEEPSEEK_ROUTE = 'deepseek-fallback'
+ROUTER_PRIMARY_ROUTE = app_config.settings.default_route
 
 ROUTER_FALLBACKS = [
-    {
-        ROUTER_PRIMARY_ROUTE: [
-            ROUTER_OPENROUTER_ROUTE,
-            ROUTER_DEEPSEEK_ROUTE
-        ]
-    }
+    {rule.primary: rule.chain} for rule in app_config.fallbacks
 ]
-
-TEMPERATURE = 0.7
-MAX_TOOL_ITERATIONS = 10
-
-
 def build_router_model_list() -> list[dict]:
     missing_keys = []
-    if not GROQ_API_KEY:
-        missing_keys.append('GROQ_API_KEY')
-    if not OPENROUTER_API_KEY:
-        missing_keys.append('OPENROUTER_API_KEY')
-    if not DEEPSEEK_API_KEY:
-        missing_keys.append('DEEPSEEK_API_KEY')
+    router_models = []
+
+    for model_cfg in app_config.models:
+        api_key = os.getenv(model_cfg.api_key_env)
+        # print(f"[DEBUG CONFIG] Model: {model_cfg.model_name} | Env var: {model_cfg.api_key_env} | Key loaded?: {bool(api_key)} (len: {len(api_key) if api_key else 0})")
+        if not api_key:
+            missing_keys.append(model_cfg.api_key_env)
+        router_models.append(
+            {
+                'model_name': model_cfg.model_name,
+                'litellm_params': {
+                    'model': model_cfg.litellm_model,
+                    'api_key': api_key,
+                },
+            }
+        )
+
     if missing_keys:
-        missing = ', '.join(missing_keys)
-        raise RuntimeError(f"Missing API keys: {missing}")
+        unique_missing = ', '.join(sorted(set(missing_keys)))
+        raise RuntimeError(
+            f"Missing environment variables for models: {unique_missing}"
+        )
 
-    return [
-        {
-            'model_name': ROUTER_PRIMARY_ROUTE,
-            'litellm_params': {
-                'model': PRIMARY_MODEL,
-                'api_key': GROQ_API_KEY
-            },
-
-        },
-        {
-            'model_name': ROUTER_OPENROUTER_ROUTE,
-            'litellm_params': {
-                'model': OPENROUTER_FALLBACK_MODEL,
-                'api_key': OPENROUTER_API_KEY
-            }
-        },
-        {
-            'model_name': ROUTER_DEEPSEEK_ROUTE,
-            'litellm_params': {
-                'model': DEEPSEEK_FALLBACK_MODEL,
-                'api_key': DEEPSEEK_API_KEY
-            }
-        }
-    ]
+    return router_models

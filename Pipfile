@@ -12,6 +12,7 @@ ddgs = "*"
 crawl4ai = "*"
 litellm = "*"
 prompt-toolkit = "*"
+pyyaml = "*"
 
 [dev-packages]
 

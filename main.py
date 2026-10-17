@@ -12,7 +12,7 @@ def main():
 
     controller.interactive_startup()
 
-    print(f'\n Открыт чат с {config.PRIMARY_MODEL}. введите /help для помощи\n')
+    print(f'\n Открыт чат с {agent.primary_model}. введите /help для помощи\n')
     
 
 

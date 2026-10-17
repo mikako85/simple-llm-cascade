@@ -3,6 +3,7 @@ import readline  # noqa: F401 — включает историю ввода в 
 import sys
 
 import litellm
+# litellm.set_verbose = True
 from litellm import Router
 from litellm.integrations.custom_logger import CustomLogger
 
@@ -23,113 +24,85 @@ from schemas import TOOLS_SCHEMAS
 # ИЗМЕНЕНО: per-deployment callback сообщает в CLI, какой fallback Router пробует.
 # В LiteLLM callback вызывается на неудачной попытке deployment до следующего шага.
 class _FallbackNoticeLogger(CustomLogger):
-    def __init__(self):
+    def __init__(self, fallbacks_config: list):
         super().__init__()
 
-    @staticmethod
-    def _provider_from_request_data(request_data) -> str | None:
-        """Best-effort определяет deployment, который завершился ошибкой."""
-        if not isinstance(request_data, dict):
-            return None
+        self.transition_map = {}
+        for rule in fallbacks_config:
+            primary = rule.primary
+            chain = rule.chain
+            full_chain = [primary] + chain
+            for i in range(len(full_chain) - 1):
+                self.transition_map[full_chain[i]] = full_chain[i + 1]
 
-        values = [request_data.get("model"), request_data.get("model_name")]
-        litellm_params = request_data.get("litellm_params")
-        if isinstance(litellm_params, dict):
-            values.extend(
-                [litellm_params.get("model"), litellm_params.get("model_name")]
-            )
-
-        model_refs = " ".join(str(value).lower() for value in values if value)
-        if "deepseek" in model_refs:
-            return "deepseek"
-        if "openrouter" in model_refs or "nemotron-3-super" in model_refs:
-            return "openrouter"
-        if "groq" in model_refs or "gpt-oss-120b" in model_refs:
-            return "groq"
-        return None
 
     async def async_post_call_failure_deployment_hook(
-        self, request_data, exception, call_type, fallback_depth=None
+            self, request_data, exception, call_type, fallback_depth=None
     ):
-        # ИЗМЕНЕНО: fallback_depth различает ошибку исходной модели и ошибку
-        # первого fallback; если depth не передан, пробуем определить провайдера
-        # по данным конкретной попытки.
-        if fallback_depth is not None:
+        failed_route = None
+        if isinstance(request_data, dict):
+            model_name = request_data.get("model") or request_data.get("model_name")
+            if not model_name and isinstance(request_data.get('litellm_params'), dict):
+                model_name = request_data['litellm_params'].get('model_name')
+
+            if model_name:
+                failed_route = model_name
+
+        next_route = self.transition_map.get(failed_route) if failed_route else None
+
+        if not next_route and fallback_depth is not None:
             try:
                 depth = int(fallback_depth)
-            except (TypeError, ValueError):
-                depth = None
-            if depth is not None:
-                failed_provider = (
-                    "groq" if depth <= 0 else "openrouter" if depth == 1 else "deepseek"
-                )
-            else:
-                failed_provider = self._provider_from_request_data(request_data) or "groq"
-        else:
-            failed_provider = self._provider_from_request_data(request_data) or "groq"
+                routes_sequence = list[self.transition_map.keys()]
+                if routes_sequence and depth < len(routes_sequence):
+                    failed_route = routes_sequence[depth]
+                    next_route = self.transition_map.get(failed_route)
+            except (ValueError, TypeError):
+                pass
 
-        transitions = {
-            "groq": (
-                "Groq",
-                "OpenRouter",
-                config.OPENROUTER_FALLBACK_MODEL,
-            ),
-            "openrouter": (
-                "OpenRouter",
-                "DeepSeek",
-                config.DEEPSEEK_FALLBACK_MODEL,
-            ),
-        }
-        transition = transitions.get(failed_provider)
-        if transition is None:
-            # Последний fallback (DeepSeek) завершился ошибкой — следующей модели нет.
+        if not next_route:
             return
 
-        failed_name, next_name, next_model = transition
         error_name = type(exception).__name__
-        # ИЗМЕНЕНО: пишем в stderr, чтобы служебное уведомление не попадало
-        # в текст ответа и было заметно также при потоковой выдаче.
         try:
-            print(
-                f"\n[LiteLLM Router] Ошибка на {failed_name} ({error_name}); "
-                f"переключаюсь на {next_name}: {next_model}",
-                file=sys.stderr,
-                flush=True,
-            )
+            print(f'Trying fallback model: {next_route} for {error_name} in {failed_route}',
+                  file=sys.stderr, flush=True)
         except Exception:
-            # Ошибка вывода диагностического уведомления не должна блокировать fallback.
             return
-
-
-_FALLBACK_NOTICE_LOGGER = _FallbackNoticeLogger()
 
 
 def _register_fallback_notice_logger() -> None:
     """Добавляет уведомление в общие SDK callbacks, не удаляя чужие callbacks."""
-    callbacks = list(getattr(litellm, "callbacks", None) or [])
-    if not any(isinstance(callback, _FallbackNoticeLogger) for callback in callbacks):
-        callbacks.append(_FALLBACK_NOTICE_LOGGER)
+    global _fallback_logger_instance
+
+    if _fallback_logger_instance is None:
+        _fallback_logger_instance = _FallbackNoticeLogger(config.app_config.fallbacks)
+
+    callbacks = list[getattr(litellm, "callbacks", None) or []]
+
+    if not any(isinstance(cb, _FallbackNoticeLogger) for cb in callbacks):
+        callbacks.append(_fallback_logger_instance)
+
     litellm.callbacks = callbacks
+    
 
 
 class ChatAgent:
     def __init__(self, model_name: str | None = None):
-        # ИЗМЕНЕНО: model_name здесь — логическое имя маршрута Router,
-        # а не напрямую имя модели Groq/OpenRouter.
+        
         self.primary_model = model_name or config.ROUTER_PRIMARY_ROUTE
 
-        # ИЗМЕНЕНО: до создания Router регистрируем per-deployment callback.
-        # На каждом неудачном переходе он сообщает в CLI целевую модель fallback.
-        _register_fallback_notice_logger()
+        fallback_logger = _FallbackNoticeLogger(config.app_config.fallbacks)
 
-        # ИЗМЕНЕНО: создаём Router один раз и задаём fallback на уровне маршрутизатора.
-        # Цепочка конфигурируется в config.py: Groq → OpenRouter → DeepSeek.
-        # Не передавайте fallbacks в отдельный litellm.completion(...): для этого
-        # проекта это приводило к несовместимости синхронного вызова со stream-итератором.
+        callbacks = list(getattr(litellm, "callbacks", None) or [])
+        if not any(isinstance(cb, _FallbackNoticeLogger) for cb in callbacks):
+            callbacks.append(fallback_logger)
+        litellm.callbacks = callbacks
+
         self.router = Router(
             model_list=config.build_router_model_list(),
             fallbacks=config.ROUTER_FALLBACKS,
-            # Сначала одна попытка у Groq, затем переход на fallback без повторов Groq.
+            set_verbose=False,
             num_retries=0,
         )
 
