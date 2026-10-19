@@ -1,4 +1,5 @@
 import os
+import yaml
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from agent import ChatAgent
@@ -9,13 +10,74 @@ import config
 
 class AppCLIController:
     '''controller for global system commands (by example /config)'''
+
+    def show_models_status(self):
+        '''Считывает и выводит статус моделей, фолбэков и дефолтного маршрута из models.yaml'''
+        config_path = "models.yaml"
+        
+        if not os.path.exists(config_path):
+            print("❌ Файл конфигурации models.yaml не найден.")
+            return
+
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+        except Exception as e:
+            print(f"❌ Ошибка чтения конфига: {e}")
+            return
+
+        settings = data.get("settings", {})
+        models = data.get("models", [])
+        fallbacks = data.get("fallbacks", [])
+        default_route = settings.get("default_route", "Не задано")
+
+        box_width = 58  # Фиксированная ширина внутренней части рамки
+
+        print('\n╔' + '═' * box_width + '╗')
+        title = "СТАТУС МОДЕЛЕЙ И ФОЛБЭКОВ"
+        print(f'║ {title:^{box_width-2}} ║')
+        print('╠' + '═' * box_width + '╣')
+        
+        route_str = f"⭐ Активный маршрут: {default_route}"
+        print(f'║ {route_str:<{box_width-2}} ║')
+        print('╠' + '─' * box_width + '╣')
+        
+        print(f'║ Доступные модели в конфиге:{"":<{box_width-2-28}} ║')
+        for m in models:
+            m_name = m.get("model_name", "unknown")
+            litellm = m.get("litellm_model", "")
+            marker = " (active)" if m_name == default_route else ""
+            line1 = f"  • {m_name}{marker}"
+            print(f'║ {line1:<{box_width-2}} ║')
+            
+            if litellm:
+                # Если строка с литлм моделью слишком длинная, аккуратно обрежем её
+                if len(litellm) > box_width - 6:
+                    litellm = litellm[:box_width-9] + "..."
+                line2 = f"    ({litellm})"
+                print(f'║ {line2:<{box_width-2}} ║')
+
+        if fallbacks:
+            print('╠' + '─' * box_width + '╣')
+            print(f'║ Цепочки фолбэков:{"":<{box_width-2-17}} ║')
+            for fb in fallbacks:
+                primary = fb.get("primary", "")
+                chain = ", ".join(fb.get("chain", []))
+                line_fb = f"  {primary} ➔ [{chain}]"
+                print(f'║ {line_fb:<{box_width-2}} ║')
+                
+        print('╚' + '═' * box_width + '╝\n')
+
     def handle_command(self, user_input: str) -> bool:
         '''handle system command, returns True if command was handled'''
         if user_input.strip() == '/config':
             wizard = ConfigWizard()
             wizard.run()
             return True
-        
+
+        if user_input.strip() == '/models':
+            self.show_models_status()
+            return True
 
         if user_input.strip() == '/prompt':
             _edit_system_prompt_interactive()
@@ -30,19 +92,29 @@ class SessionCLIController:
 
 
     def print_help(self):
-        print('\n=== КОМАНДЫ УПРАВЛЕНИЯ СЕССИЯМИ ===')
-        print(' /sessions - список сохранённых сессий')
-        print(' /load <имя> - загрузить сессию')
-        print(' /save <имя> - сохранить сессию')
-        print(' /delete <имя> - удалить сессию')
-        print(' exit /q - выход из программы')
-        print('=== КОМАНДЫ УПРАВЛЕНИЯ СЕССИЯМИ ===\n')
+        print('\n╔════════════════════════════════════════╗')
+        print('║             СПРАВКА ПО КОМАНДАМ        ║')
+        print('╠════════════════════════════════════════╣')
+        print('║ Глобальные команды:                    ║')
+        print('║   /config   - Мастер конфигурации      ║')
+        print('║   /models   - Статус моделей и фолбэков║')
+        print('║   /prompt   - Редактировать системный  ║')
+        print('║               промпт (SYSTEM_PROMPT.md)║')
+        print('║                                        ║')
+        print('║ Управление сессиями:                   ║')
+        print('║   /sessions - Список сохранённых сессий║')
+        print('║   /load <имя> - Загрузить сессию       ║')
+        print('║   /save <имя> - Сохранить сессию       ║')
+        print('║   /delete <имя> - Удалить сессию       ║')
+        print('║                                        ║')
+        print('║ Выход:                                 ║')
+        print('║   exit / q  - Выход из программы       ║')
+        print('╚════════════════════════════════════════╝\n')
 
 
-    def interactive_startup(self):
+    def prompt_session_selection(self):
         '''Интерактивное меню при старте программы (опциональный выбор/удаление сессий)'''
 
-        self.print_help()
         sessions = self.agent.memory.list_sessions()
         if not sessions:
             return 
@@ -112,6 +184,7 @@ class SessionCLIController:
                     print(f'Сессия {arg} не найдена')
         else:
             print('Неизвестная команда')
+            return False
 
         return True
 

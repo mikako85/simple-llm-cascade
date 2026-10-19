@@ -4,8 +4,6 @@ from cli_controller import SessionCLIController, CLIInputHandler, AppCLIControll
 from config_wizard import ConfigWizard
 
 
-
-
 def main():
     ConfigWizard.ensure_config_exists()
     agent = ChatAgent()
@@ -13,10 +11,8 @@ def main():
     session_controller = SessionCLIController(agent)
     input_handler = CLIInputHandler()
 
-    
-    session_controller.interactive_startup()
-
     print(f'\n Открыт чат с {agent.primary_model}. введите /help для помощи\n')
+    session_controller.prompt_session_selection()
     
     while True:
         try:
