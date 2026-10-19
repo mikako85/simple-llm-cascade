@@ -1,21 +1,23 @@
 from agent import ChatAgent
 import config
-from cli_controller import SessionCLIController, CLIInputHandler
+from cli_controller import SessionCLIController, CLIInputHandler, AppCLIController
+from config_wizard import ConfigWizard
 
 
 
 
 def main():
+    ConfigWizard.ensure_config_exists()
     agent = ChatAgent()
-    controller = SessionCLIController(agent)
+    app_controller = AppCLIController()
+    session_controller = SessionCLIController(agent)
     input_handler = CLIInputHandler()
 
-    controller.interactive_startup()
+    
+    session_controller.interactive_startup()
 
     print(f'\n Открыт чат с {agent.primary_model}. введите /help для помощи\n')
     
-
-
     while True:
         try:
             user_input = input_handler.get_user_input()
@@ -25,7 +27,11 @@ def main():
             if user_input.lower() in ['exit', 'q']:
                 print('Завершение сеанса')
                 break
-            if controller.handle_command(user_input):
+
+            if app_controller.handle_command(user_input):
+                continue
+
+            if session_controller.handle_command(user_input):
                 continue
 
             agent.chat(user_input)

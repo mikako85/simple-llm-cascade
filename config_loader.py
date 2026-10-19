@@ -1,6 +1,7 @@
 from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field, field_validator
+from config_wizard import ConfigWizard
 
 
 class SettingsConfig(BaseModel):
@@ -37,8 +38,9 @@ class AppConfig(BaseModel):
 
 def load_config(config_path: str | Path = 'models.yaml') -> AppConfig:
     path = Path(config_path)
-    if not path.exists():
-        raise FileNotFoundError(f'Config file not found: {path}')
+    if not path.exists() or path.stat().st_size == 0:
+        print('Configuration"s file don"t exist or empty')
+        ConfigWizard.ensure_config_exists(config_path)
 
     with open(path, 'r', encoding='utf-8') as f:
         raw_data = yaml.safe_load(f)
