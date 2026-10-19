@@ -3,6 +3,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from agent import ChatAgent
 from config_wizard import ConfigWizard
+from system_prompt_manager import _edit_system_prompt_interactive
 import config
 
 
@@ -14,6 +15,12 @@ class AppCLIController:
             wizard = ConfigWizard()
             wizard.run()
             return True
+        
+
+        if user_input.strip() == '/prompt':
+            _edit_system_prompt_interactive()
+            return True
+
         return False
 
 
