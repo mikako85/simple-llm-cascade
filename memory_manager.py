@@ -4,7 +4,7 @@ from datetime import datetime
 
 MEMORY_DIR = 'memory'
 SESSIONS_DIR = os.path.join(MEMORY_DIR, 'sessions')
-MEMORY_FILE = os.path.join(MEMORY_DIR, 'MEMORY.md')
+MEMORY_FILE = os.path.join(MEMORY_DIR, 'SYSTEM_PROMPT.md')
 
 
 class MemoryManager:
@@ -18,7 +18,7 @@ class MemoryManager:
 
 
     def load_global_memory(self) -> str:
-        """Считывает долговременную память из MEMORY.md"""
+        """Считывает долговременную память из SYSTEM_PROMPT.md"""
         if os.path.exists(MEMORY_FILE):
             with open(MEMORY_FILE, 'r', encoding='utf-8') as f:
                 return f.read()

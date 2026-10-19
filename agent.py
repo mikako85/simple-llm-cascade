@@ -125,7 +125,7 @@ class ChatAgent:
                 "role": "system",
                 "content": (
                     "Ты полезный ассистент разработчика.\n\n"
-                    "Долгосрочный контекст проекта (MEMORY.md):\n"
+                    "Долгосрочный контекст проекта (SYSTEM_PROMPT.md):\n"
                     f"{global_memory}"
                 ),
             },
