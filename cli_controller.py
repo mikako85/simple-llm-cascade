@@ -10,6 +10,8 @@ import config
 
 class AppCLIController:
     '''controller for global system commands (by example /config)'''
+    def __init__(self, agent: ChatAgent):
+        self.agent = agent
 
     def show_models_status(self):
         '''Считывает и выводит статус моделей, фолбэков и дефолтного маршрута из models.yaml'''
@@ -83,6 +85,52 @@ class AppCLIController:
             _edit_system_prompt_interactive()
             return True
 
+        
+
+        if user_input.startswith('/add'):
+            file_path = user_input[len('/add'):].strip()
+            if not file_path:
+                print('Please, specify the path to the file')
+                return True
+            try:
+                self.agent.context.add(file_path)
+                print(f'File {file_path} added to context')
+            except Exception as e:
+                print(f'Error adding file to context: {e}')
+            return True
+
+        if user_input.startswith('/drop'):
+            file_path = user_input[len('/drop'):].strip()
+            if not file_path:
+                print('Please, specify the path to the file')
+                return True
+
+            removed = self.agent.context.drop(file_path)
+            if removed:
+                print(f'File {file_path} removed from context')
+            else:
+                print(f'File {file_path} not found in context')
+            return True
+
+        if user_input.startswith('/files'):
+            files = self.agent.context.get_files_list()
+            if not files:
+                print('No files in context')
+            else:
+                box_width = 42
+                print('\n╔' + '═' * box_width + '╗')
+                title = "ПРИКРЕПЛЕННЫЕ ФАЙЛЫ"
+                print(f'║ {title:^{box_width-2}} ║')
+                print('╠' + '─' * box_width + '╣')
+                for idx, f in enumerate(files, 1):
+                    line = f"{idx}. {f}"
+                    if len(line) > box_width - 4:
+                        line = line[:box_width-7] + "..."
+                    print(f'║ {line:<{box_width-2}} ║')
+                print('╚' + '═' * box_width + '╝\n')
+            return True
+            
+
         return False
 
 
@@ -100,6 +148,11 @@ class SessionCLIController:
         print('║   /models   - Статус моделей и фолбэков║')
         print('║   /prompt   - Редактировать системный  ║')
         print('║               промпт (SYSTEM_PROMPT.md)║')
+        print('║                                        ║')
+        print('║ Управление контекстом файлов:          ║')
+        print('║   /add <путь>  - Добавить файл в чат   ║')
+        print('║   /drop <путь> - Убрать файл из чата   ║')
+        print('║   /files       - Список файлов в чате  ║')
         print('║                                        ║')
         print('║ Управление сессиями:                   ║')
         print('║   /sessions - Список сохранённых сессий║')

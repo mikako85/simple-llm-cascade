@@ -7,6 +7,8 @@ import litellm
 from litellm import Router
 from litellm.integrations.custom_logger import CustomLogger
 
+from file_utils import ProjectContext
+
 import config
 from tools import (
     fetch_url_markdown,
@@ -89,7 +91,6 @@ def _register_fallback_notice_logger() -> None:
 
 class ChatAgent:
     def __init__(self, model_name: str | None = None):
-        
         self.primary_model = model_name or config.ROUTER_PRIMARY_ROUTE
 
         fallback_logger = _FallbackNoticeLogger(config.app_config.fallbacks)
@@ -107,6 +108,7 @@ class ChatAgent:
         )
 
         self.memory = MemoryManager()
+        self.context = ProjectContext()
         global_memory = self.memory.load_global_memory()
 
         self.available_tools = {
@@ -135,14 +137,26 @@ class ChatAgent:
         self.messages.append({"role": "user", "content": user_input})
         current_iteration = 0
 
+        
+
         while current_iteration < config.MAX_TOOL_ITERATIONS:
             current_iteration += 1
+
+            messages_for_api = list(self.messages)  # ИЗМЕНЕНО: сохраняем исходные сообщения
+
+            files_context = self.context.get_combined_context() if hasattr(self, 'context') else ''
+
+            if files_context and messages_for_api:
+                last_msg = messages_for_api[-1].copy()
+                if last_msg['role'] == 'user':
+                    last_msg['content'] = f'{files_context}\n\n User"s request: {user_input}'
+                    messages_for_api[-1] = last_msg
 
             # ИЗМЕНЕНО: запрос идёт через Router. Fallback уже настроен при его создании;
             # здесь намеренно нет параметра fallbacks=.
             stream = self.router.completion(
                 model=self.primary_model,
-                messages=self.messages,
+                messages=messages_for_api,
                 tools=TOOLS_SCHEMAS,
                 tool_choice="auto",
                 temperature=config.TEMPERATURE,

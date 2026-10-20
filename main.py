@@ -7,7 +7,7 @@ from config_wizard import ConfigWizard
 def main():
     ConfigWizard.ensure_config_exists()
     agent = ChatAgent()
-    app_controller = AppCLIController()
+    app_controller = AppCLIController(agent)
     session_controller = SessionCLIController(agent)
     input_handler = CLIInputHandler()
 

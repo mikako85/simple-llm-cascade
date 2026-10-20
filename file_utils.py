@@ -28,4 +28,36 @@ def read_project_file(file_path: str) -> str:
     except Exception as e:
         raise ValueError(f'Error reading file: {e}')
 
-print(read_project_file('2025-06-30_08-50.png'))
+
+class ProjectContext:
+    def __init__(self):
+        self.active_files = {}
+
+
+    def add(self, file_path: str) -> str:
+        content = read_project_file(file_path)
+        self.active_files[file_path.strip()] = content
+        return file_path.strip()
+
+
+    def drop(self, file_path: str) -> bool:
+        clean_path = file_path.strip()
+        if clean_path in self.active_files:
+            del self.active_files[clean_path]
+            return True
+        return False
+
+
+    def get_files_list(self) -> list:
+        return list(self.active_files.keys())
+
+
+    def get_combined_context(self) -> str:
+        if not self.active_files:
+            return ''
+
+        result = '\n--- Attached files of project ---\n'
+        for file_path, content in self.active_files.items():
+            result += f'--- {file_path} ---\n{content}\n'
+        return result
+
