@@ -22,7 +22,7 @@ WORKSPACE_DIR = Path(__file__).parent.resolve()
 
 # Shared sandbox runner with a short timeout, because tool results go
 # straight into the model context.
-sandbox_runner = SandboxRunner(project_dir=WORKSPACE_DIR, timeout_sec=10)
+sandbox_runner = SandboxRunner(project_dir=WORKSPACE_DIR, timeout_sec=30)
 
 
 def run_bash_command(command: str) -> str:
@@ -30,6 +30,11 @@ def run_bash_command(command: str) -> str:
 
     The sandbox runs without network access, confines writes to the project
     directory and enforces CPU, process and time limits.
+
+    Inside the sandbox the project folder is mounted as $HOME, so the host
+    path reported by get_current_directory() does not exist there. Prefer
+    relative paths or $HOME; absolute project paths are rewritten
+    automatically.
 
     Args:
         command: Bash command line to execute.
@@ -53,7 +58,9 @@ def get_current_directory() -> str:
     """Return the current working directory of the agent process.
 
     Returns:
-        Absolute path to the current working directory.
+        Absolute path to the current working directory of the agent process.
+        This is a host path; inside the sandbox the project folder is
+        mounted as $HOME instead.
     """
     return os.getcwd()
 
