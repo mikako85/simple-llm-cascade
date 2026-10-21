@@ -1,24 +1,51 @@
-import os
+"""Long-term memory and dialogue session persistence.
+
+The agent keeps two kinds of memory:
+
+* a global memory file (memory/SYSTEM_PROMPT.md) injected into the system
+  prompt at start-up;
+* per-session transcripts stored as JSON Lines files under
+  memory/sessions, one JSON object per message.
+"""
+
 import json
+import os
 from datetime import datetime
 
 MEMORY_DIR = 'memory'
 SESSIONS_DIR = os.path.join(MEMORY_DIR, 'sessions')
 MEMORY_FILE = os.path.join(MEMORY_DIR, 'SYSTEM_PROMPT.md')
 
+DEFAULT_MEMORY_TEMPLATE = (
+    '# Agent project memory\n\n'
+    'This file stores the long-term context and important project details.\n'
+)
+
 
 class MemoryManager:
+    """Manage the global memory file and the saved dialogue sessions.
+
+    The manager creates the memory directory layout on initialisation and
+    keeps track of the session file currently in use.
+    """
+
     def __init__(self):
+        """Create the memory folders and the memory file when missing."""
         os.makedirs(SESSIONS_DIR, exist_ok=True)
         if not os.path.exists(MEMORY_FILE):
             with open(MEMORY_FILE, 'w', encoding='utf-8') as f:
-                f.write('# ПРоектная память агента\n\n Здесь хранаится контекст и важные детали. \n') 
+                f.write(DEFAULT_MEMORY_TEMPLATE)
 
         self.current_session_file = None
 
 
     def load_global_memory(self) -> str:
-        """Считывает долговременную память из SYSTEM_PROMPT.md"""
+        """Read the long-term memory from SYSTEM_PROMPT.md.
+
+        Returns:
+            Content of the memory file, or an empty string when the file
+            does not exist.
+        """
         if os.path.exists(MEMORY_FILE):
             with open(MEMORY_FILE, 'r', encoding='utf-8') as f:
                 return f.read()
@@ -26,7 +53,11 @@ class MemoryManager:
 
 
     def list_sessions(self) -> list:
-        '''Возвращает список всех сессий'''
+        """List the available dialogue sessions.
+
+        Returns:
+            Session file names ending with .jsonl, newest first.
+        """
         if not os.path.exists(SESSIONS_DIR):
             return []
         files = [f for f in os.listdir(SESSIONS_DIR) if f.endswith('.jsonl')]
@@ -34,7 +65,17 @@ class MemoryManager:
 
 
     def save_dialogue_to_file(self, messages: list, session_name: str = None) -> str:
-        '''Сохраняет диалог в файл сессии'''
+        """Write the dialogue to a session file.
+
+        Args:
+            messages: Conversation messages in OpenAI chat format.
+            session_name: Target session name. A timestamp-based name is
+                generated when the argument is empty. The .jsonl extension
+                is appended automatically.
+
+        Returns:
+            Name of the written session file.
+        """
         if not session_name or not session_name.strip():
             session_name = datetime.now().strftime('%Y-%m-%d_%H-%M-%S.jsonl')
 
@@ -46,17 +87,28 @@ class MemoryManager:
 
         with open(full_path, 'w', encoding='utf-8') as f:
             for msg in messages:
-                f.write(json.dumps(msg, ensure_ascii=False ) + '\n')
+                f.write(json.dumps(msg, ensure_ascii=False) + '\n')
 
         return session_name
 
 
     def load_existing_session(self, session_name: str):
-        '''Загружает существующий файл сессии и возвращает список сообщений для восстановления контекста'''
+        """Load a saved session and rebuild the message history.
+
+        Args:
+            session_name: Name of the session file to load.
+
+        Returns:
+            List of messages parsed from the session file. Malformed lines
+            are skipped silently.
+
+        Raises:
+            FileNotFoundError: If the session file does not exist.
+        """
         full_path = os.path.join(SESSIONS_DIR, session_name)
 
         if not os.path.exists(full_path):
-            raise FileNotFoundError(f'Файл сессии не найден: {full_path}')
+            raise FileNotFoundError(f'Session file not found: {full_path}')
 
         self.current_session_file = full_path
         messages = []
@@ -71,8 +123,16 @@ class MemoryManager:
 
         return messages
 
+
     def delete_session(self, session_name: str) -> bool:
-        '''Удаляет файл сессии по имени'''
+        """Delete a session file.
+
+        Args:
+            session_name: Name of the session file to delete.
+
+        Returns:
+            True when the file was removed, False when it was not found.
+        """
         full_path = os.path.join(SESSIONS_DIR, session_name)
         if os.path.exists(full_path):
             os.remove(full_path)

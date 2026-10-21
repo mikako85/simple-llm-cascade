@@ -1,10 +1,35 @@
-import os
-import yaml
+"""Interactive configuration wizard for models.yaml and .env.
+
+The wizard is started at boot when models.yaml is missing or empty, and
+from the /config command at runtime. It lets the user add and remove model
+routes, choose the default route and configure the fallback chains, then
+writes the result back to the YAML file.
+"""
+
 from pathlib import Path
+
+import yaml
 
 
 class ConfigWizard:
-    def __init__(self, config_path: str  = 'models.yaml', env_path: str = '.env'):
+    """Interactive editor of the model configuration.
+
+    Attributes:
+        config_path: Path to the YAML configuration file.
+        env_path: Path to the .env file holding the API keys.
+        models: Model routes currently configured.
+        default_route: Route used as the primary model.
+        fallbacks: Fallback rules currently configured.
+        settings: Global settings such as temperature and iteration limit.
+    """
+
+    def __init__(self, config_path: str = 'models.yaml', env_path: str = '.env'):
+        """Load the existing configuration, if any.
+
+        Args:
+            config_path: Path to the YAML configuration file.
+            env_path: Path to the .env file holding the API keys.
+        """
         self.config_path = Path(config_path)
         self.env_path = Path(env_path)
         self.models: list[dict] = []
@@ -12,17 +37,24 @@ class ConfigWizard:
         self.fallbacks: list[dict] = []
         self.settings: dict = {
             'temperature': 0.7,
-            'max_tool_iterations': 10
+            'max_tool_iterations': 10,
         }
 
         self.load_existing_config()
 
 
     def load_existing_config(self):
-        '''load existing config'''
+        """Read models.yaml into the wizard state.
+
+        A missing, empty or malformed file leaves the default empty state,
+        so the wizard can start from scratch.
+
+        Returns:
+            None
+        """
         if self.config_path.exists() and self.config_path.stat().st_size > 0:
             try:
-                with open(self.config_path, 'r', encoding='utf-8') as f:
+                with open(self.config_path, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f)
                 settings_block = data.get('settings')
                 self.default_route = settings_block.get('default_route', '')
@@ -34,10 +66,18 @@ class ConfigWizard:
                 self.models = data.get('models', [])
                 self.fallbacks = data.get('fallbacks', [])
             except Exception as e:
-                print(f'Error loading config: {e}')                
+                print(f'Error loading config: {e}')
 
 
     def _prompt_yes_no(self, question: str) -> bool:
+        """Ask a yes/no question until a valid answer is given.
+
+        Args:
+            question: Question text shown to the user.
+
+        Returns:
+            True for yes, False for no.
+        """
         while True:
             choice = input(f"{question} (y/n): ").strip().lower()
             if choice in ['y', 'yes']:
@@ -48,11 +88,19 @@ class ConfigWizard:
 
 
     def add_model_flow(self):
-        '''interactive steps for adding new model'''
+        """Interactively add a new model route.
+
+        The route name must be unique. The LiteLLM identifier has to use the
+        provider/name form, and the API key environment variable name is
+        derived from the provider unless the user overrides it.
+
+        Returns:
+            None
+        """
         while True:
-            model_name = input('Enter unigue model name(for example groq-main): ').strip()
+            model_name = input('Enter unique model name (for example groq-main): ').strip()
             if not model_name:
-                print('name can not be empty')
+                print('Name cannot be empty')
                 continue
             if any(m['model_name'] == model_name for m in self.models):
                 print('Model with this name already exists')
@@ -60,9 +108,9 @@ class ConfigWizard:
             break
 
         while True:
-            litellm_model = input('Enter litellm model name(for example groq/llama-3.3-70b-versatile): ').strip()
+            litellm_model = input('Enter LiteLLM model name (for example groq/llama-3.3-70b-versatile): ').strip()
             if '/' not in litellm_model:
-                print('litellm model name should contain "/" for example "groq/llama-3.3-70b-versatile"')
+                print('LiteLLM model name should contain "/", for example groq/llama-3.3-70b-versatile')
                 continue
             break
 
@@ -77,17 +125,24 @@ class ConfigWizard:
             'litellm_model': litellm_model,
             'api_key_env': api_key_env
         })
-        print('Model added successfully')
 
         if not self.default_route:
             self.default_route = model_name
 
-        print(f'Model: {model_name} successfully added')
+        print(f'Model {model_name} added successfully')
 
 
     def delete_model_flow(self):
-        '''interactive steps for deleting model'''
-        print("\n---delete model---")
+        """Interactively delete a model route.
+
+        The last remaining route cannot be deleted. When the default route is
+        removed, the first remaining route becomes the new default, and the
+        route is also removed from every fallback chain.
+
+        Returns:
+            None
+        """
+        print("\n--- delete model ---")
 
         if not self.models:
             print('No models to delete')
@@ -95,7 +150,7 @@ class ConfigWizard:
             return
 
         if len(self.models) <= 1:
-            print('You can not delete last model')
+            print('You cannot delete the last model')
             input('Press Enter to continue...')
             return
 
@@ -112,7 +167,7 @@ class ConfigWizard:
 
         idx = int(choice) - 1
         if not (0 <= idx < len(self.models)):
-            print('wrong model"s number')
+            print('Wrong model number')
             input('Press Enter to continue...')
             return
 
@@ -120,7 +175,7 @@ class ConfigWizard:
         target_name = target_model['model_name']
 
         if not self._prompt_yes_no(f'Are you sure you want to delete model "{target_name}"?'):
-            print('Deletion canceled')
+            print('Deletion cancelled')
             return
 
         self.models.pop(idx)
@@ -137,25 +192,33 @@ class ConfigWizard:
                 fb['chain'].remove(target_name)
 
         input('Press Enter to continue...')
-            
+
+
     def configure_fallbacks_flow(self):
-        '''interactive steps for configuring fallbacks'''
+        """Interactively configure the fallback chains.
+
+        The user can build a chain manually, generate a single standard
+        chain from all models or clear the existing rules.
+
+        Returns:
+            None
+        """
         while True:
-            print('\n---configure fallbacks---')
+            print('\n--- configure fallbacks ---')
             print('Current model by default (primary):', self.default_route or 'none')
 
             if self.fallbacks:
                 print('Current fallbacks:')
                 for idx, fb in enumerate(self.fallbacks):
-                    print(f'{idx + 1}. main: {fb.get("primary")} chain: {", ".join(fb.get("chain", []))}')
+                    print(f'{idx + 1}. primary: {fb.get("primary")} chain: {", ".join(fb.get("chain", []))}')
             else:
                 print('No fallbacks configured')
 
-            print('\n1 Add new fallback')
-            print('2. Automatically configure fallbacks (from all models)')
-            print('3. Clean all configured fallbacks')
+            print('\n1. Add new fallback')
+            print('2. Configure fallbacks automatically (from all models)')
+            print('3. Clear all configured fallbacks')
             print('4. Back to main menu')
-            
+
             choice = input('Enter your choice: ').strip()
             if choice == '1':
                 if len(self.models) < 2:
@@ -174,7 +237,7 @@ class ConfigWizard:
 
                 p_idx = int(primary_choice) - 1
                 if not (0 <= p_idx < len(self.models)):
-                    print('wrong model"s number')
+                    print('Wrong model number')
                     input('Press Enter to continue...')
                     continue
 
@@ -192,7 +255,8 @@ class ConfigWizard:
                         print('All models are already in the chain')
                         break
 
-                    print(f'\n Current chain for model {primary_name}: {", ".join(chain_list if chain_list else "empty")}')
+                    current = ", ".join(chain_list) if chain_list else "empty"
+                    print(f'\n Current chain for model {primary_name}: {current}')
                     print('Choose a model to add to the chain or press Enter to finish:')
 
                     for idx, m in enumerate(available_for_chain):
@@ -207,12 +271,12 @@ class ConfigWizard:
                         continue
 
                     c_idx = int(chain_choice) - 1
-                    if (0 <= c_idx < len(available_for_chain)):
+                    if 0 <= c_idx < len(available_for_chain):
                         chosen_fallback = available_for_chain[c_idx]['model_name']
                         chain_list.append(chosen_fallback)
                         print(f'Added {chosen_fallback} to the chain')
                     else:
-                        print('wrong model"s number')
+                        print('Wrong model number')
 
                 if chain_list:
                     existing_fb = next((fb for fb in self.fallbacks if fb.get('primary') == primary_name), None)
@@ -230,22 +294,25 @@ class ConfigWizard:
                 if len(self.models) < 2:
                     print('You need at least 2 models to configure fallbacks')
                 else:
-                    fallback_chain = [m['model_name'] for m in self.models if m['model_name'] != self.default_route]
+                    fallback_chain = [
+                        m['model_name'] for m in self.models
+                        if m['model_name'] != self.default_route
+                    ]
                     if fallback_chain:
                         self.fallbacks = [{'primary': self.default_route, 'chain': fallback_chain}]
                         print('Standard chain configured successfully')
                     else:
-                        print('Not enough models for standard chain')
+                        print('Not enough models for a standard chain')
 
                 input('Press Enter to continue...')
 
             elif choice == '3':
                 if self.fallbacks:
-                    if self._prompt_yes_no('Are you sure you want to clean all configured fallbacks?'):
+                    if self._prompt_yes_no('Are you sure you want to clear all configured fallbacks?'):
                         self.fallbacks = []
-                        print('Fallbacks cleaned successfully')
+                        print('Fallbacks cleared successfully')
                 else:
-                    print('No fallbacks to clean')
+                    print('No fallbacks to clear')
 
                 input('Press Enter to continue...')
 
@@ -256,9 +323,16 @@ class ConfigWizard:
                 input('Press Enter to continue...')
 
     def save_config(self):
-        '''save config to yaml file'''
+        """Write the current wizard state back to models.yaml.
+
+        The default route is validated against the model list and replaced
+        with the first model when it is missing.
+
+        Returns:
+            None
+        """
         if not self.models:
-            print('No models for saving')
+            print('No models to save')
             return
 
         model_names = [m['model_name'] for m in self.models]
@@ -269,21 +343,24 @@ class ConfigWizard:
             'settings': {
                 'default_route': self.default_route,
                 'temperature': self.settings.get('temperature', 0.7),
-                'max_tool_iterations': self.settings.get('max_tool_iterations', 10)
+                'max_tool_iterations': self.settings.get('max_tool_iterations', 10),
             },
-                'models': self.models,
-                'fallbacks': self.fallbacks
-
+            'models': self.models,
+            'fallbacks': self.fallbacks,
         }
 
-        with open(self.config_path, 'w', encoding='utf-8') as f:
+        with open(self.config_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(config_data, f, sort_keys=False, allow_unicode=True)
 
         print(f'Config saved to {self.config_path}')
 
 
     def run(self):
-        '''main method for running config wizard'''
+        """Run the main wizard menu loop.
+
+        Returns:
+            None
+        """
         while True:
             print('=== CONFIG WIZARD ===')
             print(f'Current model by default: {self.default_route or "not set"}')
@@ -309,31 +386,32 @@ class ConfigWizard:
                 break
             else:
                 print('Invalid choice. Please try again.')
-            
-
 
 
     @classmethod
     def ensure_config_exists(cls, config_path: str = 'models.yaml'):
-        '''create config file if not exists'''
+        """Create the configuration file when it is missing or empty.
+
+        The wizard is started in that case, so the user can define at least
+        one model route before the agent is constructed.
+
+        Args:
+            config_path: Path to the YAML configuration file.
+
+        Returns:
+            None
+        """
         path = Path(config_path)
         if not path.exists() or path.stat().st_size == 0:
-            print('configuration"s file don"t exist or empty')
-            print('creating new configuration"s file')
+            print('Configuration file does not exist or is empty')
+            print('Creating a new configuration file')
 
             wizard = cls(config_path=config_path)
             wizard.run()
         else:
-            print('configuration"s file already exists')
-        
-            
-
+            print('Configuration file already exists')
 
 
 if __name__ == '__main__':
     wizard = ConfigWizard()
     wizard.run()
-            
-        
-
-            

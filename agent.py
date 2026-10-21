@@ -1,15 +1,23 @@
+"""Chat agent built on top of the LiteLLM Router.
+
+The module wires together the model router with fallback chains, the tool
+set, the long-term memory and the attached project files. A single chat turn
+may involve several model calls when the model requests tools, so the agent
+loops until it produces a final answer or the iteration limit is reached.
+"""
+
 import json
-import readline  # noqa: F401 — включает историю ввода в интерактивном CLI
+import readline  # noqa: F401 - enables input history in the interactive CLI
 import sys
 
 import litellm
-# litellm.set_verbose = True
 from litellm import Router
 from litellm.integrations.custom_logger import CustomLogger
 
-from file_utils import ProjectContext
-
 import config
+from file_utils import ProjectContext
+from memory_manager import MemoryManager
+from schemas import TOOLS_SCHEMAS
 from tools import (
     fetch_url_markdown,
     get_current_directory,
@@ -19,14 +27,26 @@ from tools import (
     run_bash_command,
     search_web,
 )
-from memory_manager import MemoryManager
-from schemas import TOOLS_SCHEMAS
 
 
-# ИЗМЕНЕНО: per-deployment callback сообщает в CLI, какой fallback Router пробует.
-# В LiteLLM callback вызывается на неудачной попытке deployment до следующего шага.
 class _FallbackNoticeLogger(CustomLogger):
+    """Report Router fallback transitions to stderr.
+
+    LiteLLM calls this hook for every failed deployment, before trying the
+    next route in the chain, which makes it a convenient place to tell the
+    user that a fallback model is being tried.
+
+    Attributes:
+        transition_map: Mapping of each route to the route tried after it.
+    """
+
     def __init__(self, fallbacks_config: list):
+        """Build the route transition map from the fallback rules.
+
+        Args:
+            fallbacks_config: Fallback rules, each with a primary route and
+                a chain of alternative routes.
+        """
         super().__init__()
 
         self.transition_map = {}
@@ -41,10 +61,24 @@ class _FallbackNoticeLogger(CustomLogger):
     async def async_post_call_failure_deployment_hook(
             self, request_data, exception, call_type, fallback_depth=None
     ):
+        """Announce the next route in the chain after a failed deployment.
+
+        The failed route is taken from request_data when possible and
+        otherwise derived from fallback_depth.
+
+        Args:
+            request_data: Request payload of the failed call.
+            exception: Exception raised by the deployment.
+            call_type: LiteLLM call type (completion, embedding, ...).
+            fallback_depth: Zero-based index of the failed attempt.
+
+        Returns:
+            None
+        """
         failed_route = None
         if isinstance(request_data, dict):
             model_name = request_data.get("model") or request_data.get("model_name")
-            if not model_name and isinstance(request_data.get('litellm_params'), dict):
+            if not model_name and isinstance(request_data.get("litellm_params"), dict):
                 model_name = request_data['litellm_params'].get('model_name')
 
             if model_name:
@@ -55,7 +89,7 @@ class _FallbackNoticeLogger(CustomLogger):
         if not next_route and fallback_depth is not None:
             try:
                 depth = int(fallback_depth)
-                routes_sequence = list[self.transition_map.keys()]
+                routes_sequence = list(self.transition_map.keys())
                 if routes_sequence and depth < len(routes_sequence):
                     failed_route = routes_sequence[depth]
                     next_route = self.transition_map.get(failed_route)
@@ -73,24 +107,22 @@ class _FallbackNoticeLogger(CustomLogger):
             return
 
 
-def _register_fallback_notice_logger() -> None:
-    """Добавляет уведомление в общие SDK callbacks, не удаляя чужие callbacks."""
-    global _fallback_logger_instance
-
-    if _fallback_logger_instance is None:
-        _fallback_logger_instance = _FallbackNoticeLogger(config.app_config.fallbacks)
-
-    callbacks = list[getattr(litellm, "callbacks", None) or []]
-
-    if not any(isinstance(cb, _FallbackNoticeLogger) for cb in callbacks):
-        callbacks.append(_fallback_logger_instance)
-
-    litellm.callbacks = callbacks
-    
-
-
 class ChatAgent:
+    """Stateful chat agent with tools, memory and model fallback.
+
+    The agent owns the LiteLLM Router, the message history, the tool table
+    and the attached file context. One instance corresponds to one CLI
+    session.
+
+    """
+
     def __init__(self, model_name: str | None = None):
+        """Create the router, register the fallback logger and load memory.
+
+        Args:
+            model_name: Primary route to use. Defaults to the route from
+                models.yaml.
+        """
         self.primary_model = model_name or config.ROUTER_PRIMARY_ROUTE
 
         fallback_logger = _FallbackNoticeLogger(config.app_config.fallbacks)
@@ -126,34 +158,48 @@ class ChatAgent:
             {
                 "role": "system",
                 "content": (
-                    "Ты полезный ассистент разработчика.\n\n"
-                    "Долгосрочный контекст проекта (SYSTEM_PROMPT.md):\n"
+                    "You are a helpful developer assistant.\n\n"
+                    "Long-term project context (SYSTEM_PROMPT.md):\n"
                     f"{global_memory}"
                 ),
             },
         ]
 
+
     def chat(self, user_input: str) -> None:
+        """Send a user message and run the tool-calling loop.
+
+        The response is streamed to the terminal. When the model requests
+        tools, the calls are appended to the history together with their
+        results and the model is asked again, up to
+        config.MAX_TOOL_ITERATIONS rounds.
+
+        Args:
+            user_input: Raw text typed by the user.
+
+        Returns:
+            None
+        """
         self.messages.append({"role": "user", "content": user_input})
         current_iteration = 0
-
-        
 
         while current_iteration < config.MAX_TOOL_ITERATIONS:
             current_iteration += 1
 
-            messages_for_api = list(self.messages)  # ИЗМЕНЕНО: сохраняем исходные сообщения
+            # Copy the history so the attached files can be injected into the
+            # last user message without altering the stored conversation.
+            messages_for_api = list(self.messages)
 
             files_context = self.context.get_combined_context() if hasattr(self, 'context') else ''
 
             if files_context and messages_for_api:
                 last_msg = messages_for_api[-1].copy()
                 if last_msg['role'] == 'user':
-                    last_msg['content'] = f'{files_context}\n\n User"s request: {user_input}'
+                    last_msg['content'] = f'{files_context}\n\n User request: {user_input}'
                     messages_for_api[-1] = last_msg
 
-            # ИЗМЕНЕНО: запрос идёт через Router. Fallback уже настроен при его создании;
-            # здесь намеренно нет параметра fallbacks=.
+            # The Router already knows the fallback chains; passing them again
+            # here would duplicate the configuration.
             stream = self.router.completion(
                 model=self.primary_model,
                 messages=messages_for_api,
@@ -167,8 +213,8 @@ class ChatAgent:
             tool_calls_buffer: dict[int, dict[str, str]] = {}
             printed_response_prefix = False
 
-            # ИЗМЕНЕНО: сохраняем потоковую выдачу, но берём только доступные поля чанка.
-            # Это защищает от финальных служебных чанков без choices.
+            # Stream the answer, but only read fields that a chunk actually
+            # carries: some providers send final chunks without choices.
             for chunk in stream:
                 choices = getattr(chunk, "choices", None)
                 if not choices:
@@ -234,8 +280,8 @@ class ChatAgent:
                         }
                     )
 
-                # Сохраняем вызов модели до результатов инструментов — так требует
-                # OpenAI-совместимый формат истории диалога.
+                # The assistant turn must be stored before the tool results,
+                # as required by the OpenAI-compatible message format.
                 self.messages.append(
                     {
                         "role": "assistant",
@@ -252,17 +298,17 @@ class ChatAgent:
                     try:
                         function_args = json.loads(raw_arguments) if raw_arguments else {}
                         if not isinstance(function_args, dict):
-                            raise ValueError("Аргументы инструмента должны быть JSON-объектом")
+                            raise ValueError("Tool arguments must be a JSON object")
                     except (json.JSONDecodeError, ValueError) as exc:
-                        function_result = f"Некорректные аргументы инструмента: {exc}"
+                        function_result = f"Invalid tool arguments: {exc}"
                     else:
                         print(
-                            f"Вызываем функцию {function_name} "
-                            f"с аргументами {function_args}"
+                            f"Calling function {function_name} "
+                            f"with arguments {function_args}"
                         )
 
                         if function_name not in self.available_functions:
-                            function_result = f"Ошибка: функция {function_name} не найдена"
+                            function_result = f"Error: function {function_name} not found"
                         else:
                             target_function = self.available_functions[function_name]
                             try:
@@ -273,7 +319,7 @@ class ChatAgent:
                                 )
                             except Exception as exc:
                                 function_result = (
-                                    f"Ошибка при выполнении {function_name}: {exc}"
+                                    f"Error while executing {function_name}: {exc}"
                                 )
 
                     self.messages.append(
@@ -284,7 +330,8 @@ class ChatAgent:
                         }
                     )
 
-                # После ответа инструмента запрашиваем у Router следующий ход модели.
+                # Ask the Router for the next model turn after the tool
+                # results have been added to the history.
                 continue
 
             self.messages.append(
@@ -293,6 +340,6 @@ class ChatAgent:
             return
 
         print(
-            f"Достигнут предел итераций с инструментами "
+            f"Tool iteration limit reached "
             f"({config.MAX_TOOL_ITERATIONS})."
         )

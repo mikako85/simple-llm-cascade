@@ -1,5 +1,15 @@
+"""Runtime configuration derived from .env and models.yaml.
+
+The module loads the environment variables, validates models.yaml and
+exposes ready-to-use values for the rest of the application: the sampling
+temperature, the tool-iteration limit, the primary route and the fallback
+chains of the LiteLLM router.
+"""
+
 import os
+
 from dotenv import load_dotenv
+
 from config_loader import AppConfig, load_config
 
 load_dotenv()
@@ -18,13 +28,25 @@ ROUTER_PRIMARY_ROUTE = app_config.settings.default_route
 ROUTER_FALLBACKS = [
     {rule.primary: rule.chain} for rule in app_config.fallbacks
 ]
+
+
 def build_router_model_list() -> list[dict]:
+    """Build the model_list argument of the LiteLLM Router.
+
+    Every configured model is turned into a Router deployment, with the API
+    key resolved from the environment variable named in the config.
+
+    Returns:
+        List of Router deployment descriptions.
+
+    Raises:
+        RuntimeError: If an API key environment variable is missing.
+    """
     missing_keys = []
     router_models = []
 
     for model_cfg in app_config.models:
         api_key = os.getenv(model_cfg.api_key_env)
-        # print(f"[DEBUG CONFIG] Model: {model_cfg.model_name} | Env var: {model_cfg.api_key_env} | Key loaded?: {bool(api_key)} (len: {len(api_key) if api_key else 0})")
         if not api_key:
             missing_keys.append(model_cfg.api_key_env)
         router_models.append(

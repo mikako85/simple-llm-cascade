@@ -1,20 +1,43 @@
+"""Implementations of the tools the agent is allowed to call.
+
+The module wraps the local file system, the Firejail sandbox, DuckDuckGo
+search and Crawl4AI page fetching behind plain functions. Every function
+returns a string: the result is placed verbatim into the tool message of the
+conversation history, so failures are reported as text instead of being
+raised to the caller.
+"""
+
+import asyncio
 import os
 from datetime import datetime
 from pathlib import Path
-import asyncio
-from ddgs import DDGS
+
 from crawl4ai import AsyncWebCrawler
+from ddgs import DDGS
+
 from sandbox_runner import SandboxRunner
 
-#define workdir sandbox
+# Working directory used by the sandbox: the folder that contains this file.
 WORKSPACE_DIR = Path(__file__).parent.resolve()
 
-#define sandbox runner
+# Shared sandbox runner with a short timeout, because tool results go
+# straight into the model context.
 sandbox_runner = SandboxRunner(project_dir=WORKSPACE_DIR, timeout_sec=10)
 
-def run_bash_command(command: str) -> str:
-    '''Выполняет bash-команду внутри изолированной среды Firejail.'''
 
+def run_bash_command(command: str) -> str:
+    """Execute a bash command inside the isolated Firejail sandbox.
+
+    The sandbox runs without network access, confines writes to the project
+    directory and enforces CPU, process and time limits.
+
+    Args:
+        command: Bash command line to execute.
+
+    Returns:
+        Formatted report with STDOUT, STDERR and the exit code of the
+        command. Sandbox failures are reported in the same shape.
+    """
     result = sandbox_runner.run(command)
 
     output = []
@@ -26,79 +49,129 @@ def run_bash_command(command: str) -> str:
     return '\n'.join(output)
 
 
-
 def get_current_directory() -> str:
+    """Return the current working directory of the agent process.
+
+    Returns:
+        Absolute path to the current working directory.
+    """
     return os.getcwd()
 
 
 def get_system_time() -> str:
+    """Return the current local date and time.
+
+    Returns:
+        String representation of datetime.now().
+    """
     return str(datetime.now())
 
 
 def read_text_document(path: str, max_kb: int = 100) -> str:
+    """Read a UTF-8 encoded text file from disk.
+
+    Args:
+        path: Path to the text document.
+        max_kb: Maximum allowed file size in kilobytes.
+
+    Returns:
+        File content, or a human-readable error message when the file is
+        missing, too large or cannot be read.
+    """
     try:
         if not os.path.exists(path):
-            return f"Файл не найден: {path}"
+            return f"File not found: {path}"
 
         file_size_kb = os.path.getsize(path) / 1024
 
         if file_size_kb > max_kb:
-            return f"Размер файла превышает {max_kb} КБ"
+            return f"File size exceeds {max_kb} KB"
         with open(path, 'r', encoding='utf-8') as f:
             content = f.read()
-            return content if content else 'Файл пуст'
+            return content if content else 'File is empty'
     except Exception as e:
-        return f"Произошла ошибка чтения: {e}"
+        return f"Read error: {e}"
 
 
 def search_web(query: str, max_results: int = 5) -> str:
+    """Search the web with DuckDuckGo and format the results.
+
+    Args:
+        query: Search query in natural language.
+        max_results: Maximum number of results to return.
+
+    Returns:
+        Numbered list of results, each with a title, a URL and a snippet.
+        A short message is returned when nothing was found or on error.
+    """
     try:
         with DDGS() as ddgs:
             results = list(ddgs.text(query, max_results=max_results))
             if not results:
-                return "Ничего не нашлось"
+                return "No results found"
 
             formatted_results = []
             for i, r in enumerate(results):
-                title = r.get('title', 'Без заголовка')
+                title = r.get('title', 'Untitled')
                 href = r.get('href', '#')
-                body = r.get('body', 'Нет описания')
+                body = r.get('body', 'No description')
                 formatted_results.append(f"{i + 1}. {title} - {href}\n{body}\n")
 
             return "\n".join(formatted_results)
     except Exception as e:
-        return f"Произошла ошибка поиска: {e}"
+        return f"Search error: {e}"
 
 
 def list_directory(path: str = '.') -> str:
-    '''Возвращает список файлов по указанному пути.'''
+    """List the entries of a directory.
+
+    Args:
+        path: Directory path, absolute or relative.
+
+    Returns:
+        Newline-separated entry names sorted alphabetically, with a trailing
+        slash for directories. An error message is returned when the path
+        does not exist or is not a directory.
+    """
     try:
         target_path = Path(path).resolve()
         if not target_path.exists():
-            return f'Директория не найдена: {path}'
+            return f'Directory not found: {path}'
         if not target_path.is_dir():
-            return f'Путь не является директорией: {path}'
+            return f'Path is not a directory: {path}'
         items = []
         for entry in sorted(target_path.iterdir()):
             name = f'{entry.name}/' if entry.is_dir() else entry.name
             items.append(name)
-        return '\n'.join(items) if items else 'Пустая директория'
+        return '\n'.join(items) if items else 'Empty directory'
     except Exception as e:
-        return f'Произошла ошибка при листинге директории: {e}'
+        return f'Directory listing error: {e}'
 
 
 def fetch_url_markdown(url: str) -> str:
-    '''Загружает страницу через CrawlAI и возвращает содержимое в формате Markdown.'''
+    """Fetch a web page and convert it to Markdown.
+
+    JavaScript is executed during rendering, so single-page applications are
+    supported. The crawler is asynchronous and is driven through
+    asyncio.run to keep the tool interface synchronous.
+
+    Args:
+        url: Direct URL of the page to parse.
+
+    Returns:
+        Page content as raw Markdown, or an error message when the page
+        could not be loaded.
+    """
     async def _crawl():
-        async with AsyncWebCrawler(verbose=False)  as crawler:
+        """Render the page and return its Markdown or an error text."""
+        async with AsyncWebCrawler(verbose=False) as crawler:
             result = await crawler.arun(url=url)
             if result.success:
                 return result.markdown.raw_markdown
             else:
-                return f'Произошла ошибка при загрузке страницы: {result.error_message}'
+                return f'Page loading error: {result.error_message}'
 
     try:
         return asyncio.run(_crawl())
     except Exception as e:
-        return f'Произошла ошибка при инициализации Crawl4AI: {e}'
-            
+        return f'Crawl4AI initialization error: {e}'

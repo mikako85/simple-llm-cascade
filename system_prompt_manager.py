@@ -1,10 +1,24 @@
+"""Editing of the global system prompt from the CLI.
+
+The /prompt command opens memory/SYSTEM_PROMPT.md in an external editor.
+The file is injected into the system message on the next agent start.
+"""
+
 import os
 import subprocess
 from pathlib import Path
 
 
 def _edit_system_prompt_interactive():
-    '''Edits the system prompt interactively'''
+    """Open the system prompt file in the first available editor.
+
+    The editor is taken from the EDITOR environment variable, with nano,
+    vim and vi tried as fallbacks. When no editor is available the path to
+    the file is printed so the user can edit it manually.
+
+    Returns:
+        None
+    """
     prompt_path = Path('memory/SYSTEM_PROMPT.md')
 
     prompt_path.parent.mkdir(parents=True, exist_ok=True)
@@ -16,7 +30,7 @@ def _edit_system_prompt_interactive():
 
     if os.environ.get('EDITOR'):
         editors_to_try.append(os.environ['EDITOR'])
-    
+
     editors_to_try.extend(['nano', 'vim', 'vi'])
 
     success = False
@@ -26,7 +40,7 @@ def _edit_system_prompt_interactive():
             if result.returncode == 0:
                 print('System prompt edited successfully.')
             else:
-                print(f'System prompt editing failed. code - {result.returncode}')
+                print(f'System prompt editing failed. Code: {result.returncode}')
             success = True
             break
         except FileNotFoundError:
@@ -36,6 +50,5 @@ def _edit_system_prompt_interactive():
             continue
 
     if not success:
-        print('Do not find any editor in the system.')
+        print('No supported editor found in the system.')
         print(f'You can edit the system prompt manually: {prompt_path.absolute()}')
-    
