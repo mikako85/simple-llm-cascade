@@ -15,6 +15,7 @@ from litellm import Router
 from litellm.integrations.custom_logger import CustomLogger
 
 import config
+from context_utils import prune_tool_message
 from file_utils import ProjectContext
 from memory_manager import MemoryManager
 from schemas import TOOLS_SCHEMAS
@@ -198,8 +199,21 @@ class ChatAgent:
                     last_msg['content'] = f'{files_context}\n\n User request: {user_input}'
                     messages_for_api[-1] = last_msg
 
+            messages_for_api = prune_tool_message(
+                messages=messages_for_api,
+                keep_last_n=config.KEEP_RECENT_TOOL_OUTPUTS,
+                preserve_chars=config.TOOL_STUBS
+            )
+
             # The Router already knows the fallback chains; passing them again
             # here would duplicate the configuration.
+            # print("\n--- ДИАГНОСТИКА СТРУКТУРЫ ДИАЛОГА ---")
+            # for idx, m in enumerate(messages_for_api):
+            #     role = m.get('role')
+            #     has_tools = bool(m.get('tool_calls'))
+            #     tool_id = m.get('tool_call_id')
+            #     print(f"[{idx}] Role: {role} | has_tool_calls: {has_tools} | tool_call_id: {tool_id}")
+            # print("------------------------------------\n")
             stream = self.router.completion(
                 model=self.primary_model,
                 messages=messages_for_api,

@@ -22,11 +22,18 @@ class SettingsConfig(BaseModel):
         default_route: Route used as the primary model.
         temperature: Sampling temperature between 0 and 1.
         max_tool_iterations: Upper bound of tool-calling rounds per request.
+        keep_recent_tool_outputs: Number of recent tool outputs to keep unpruned.
+        tool_stub_preserve_chars: Number of characters to preserve in tool stubs.
     """
 
     default_route: str = Field(..., description='logic route by default')
     temperature: float = Field(0.7, ge=0.0, le=1.0, description='temperature of generation')
     max_tool_iterations: int = Field(10, ge=0, description='max tool iterations')
+    keep_recent_tool_outputs: int = Field(
+        3, ge=1, description='number of recent tool outputs to keep unpruned')
+    tool_stub_preserve_chars: int = Field(
+        150, ge=1, description='number of characters to preserve in tool stubs'
+    )
 
 
 class ModelRouteConfig(BaseModel):

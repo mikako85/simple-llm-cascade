@@ -23,6 +23,9 @@ except (FileNotFoundError, ValueError) as e:
 TEMPERATURE = app_config.settings.temperature
 MAX_TOOL_ITERATIONS = app_config.settings.max_tool_iterations
 
+KEEP_RECENT_TOOL_OUTPUTS = app_config.settings.keep_recent_tool_outputs
+TOOL_STUBS = app_config.settings.tool_stub_preserve_chars
+
 ROUTER_PRIMARY_ROUTE = app_config.settings.default_route
 
 ROUTER_FALLBACKS = [

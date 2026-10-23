@@ -38,6 +38,8 @@ class ConfigWizard:
         self.settings: dict = {
             'temperature': 0.7,
             'max_tool_iterations': 10,
+            'keep_recent_tool_outputs': 3,
+            'tool_stub_preserve_chars': 150
         }
 
         self.load_existing_config()
@@ -344,6 +346,8 @@ class ConfigWizard:
                 'default_route': self.default_route,
                 'temperature': self.settings.get('temperature', 0.7),
                 'max_tool_iterations': self.settings.get('max_tool_iterations', 10),
+                'keep_recent_tool_outputs': self.settings.get('keep_recent_tool_outputs', 3),
+                'tool_stub_preserve_chars': self.settings.get('tool_stub_preserve_chars', 150),
             },
             'models': self.models,
             'fallbacks': self.fallbacks,
