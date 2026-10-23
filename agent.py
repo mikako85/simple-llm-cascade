@@ -194,10 +194,12 @@ class ChatAgent:
             files_context = self.context.get_combined_context() if hasattr(self, 'context') else ''
 
             if files_context and messages_for_api:
-                last_msg = messages_for_api[-1].copy()
-                if last_msg['role'] == 'user':
-                    last_msg['content'] = f'{files_context}\n\n User request: {user_input}'
-                    messages_for_api[-1] = last_msg
+                for i in range(len(messages_for_api) - 1, -1, -1):
+                    if messages_for_api[i].get('role') == 'user':
+                        user_msg = messages_for_api[i].copy()
+                        user_msg['content'] = f'{files_context}\n{user_msg["content"]}'
+                        messages_for_api[i] = user_msg
+                        break
 
             messages_for_api = prune_tool_message(
                 messages=messages_for_api,
