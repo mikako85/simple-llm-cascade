@@ -324,6 +324,41 @@ class ConfigWizard:
                 print('Invalid choice')
                 input('Press Enter to continue...')
 
+
+    def set_default_model_flow(self):
+        """Interactively choose the active (default) model.
+
+        Returns:
+            None
+        """
+
+        print('\n--- SET DEFAULT MODEL ---')
+        if not self.models:
+            print('No models available')
+            input('Press Enter to continue...')
+            return
+
+        print('Available models:')
+        for idx, model in enumerate(self.models):
+            marker = ' (current active)' if model['model_name'] == self.default_route else ''
+            print(f'{idx + 1}. {model["model_name"]} [{model["litellm_model"]}]{marker}')
+
+        choice = input('\nEnter the number of the model to set as default (or press Enter to skip): ').strip()
+        if not choice.isdigit():
+            print('Invalid choice')
+            input('Press Enter to continue...')
+            return
+
+        idx = int(choice) - 1
+        if 0 <= idx < len(self.models):
+            self.default_route = self.models[idx]['model_name']
+            print(f'Active model changed to "{self.default_route}" succesfully')
+        else:
+            print('Wrong model number')
+
+        input('Press Enter to continue...')
+
+
     def save_config(self):
         """Write the current wizard state back to models.yaml.
 
@@ -371,9 +406,10 @@ class ConfigWizard:
             print(f'All models: {len(self.models)}')
             print('\n1. Add new model')
             print('2. Delete model')
-            print('3. Set fallbacks / routes')
-            print('4. Save changes and exit')
-            print('5. Exit without saving')
+            print('3. Set active (default) model')
+            print('4. Set fallbacks / routes')
+            print('5. Save changes and exit')
+            print('6. Exit without saving')
 
             choice = input('Enter your choice: ').strip()
             if choice == '1':
@@ -381,11 +417,13 @@ class ConfigWizard:
             elif choice == '2':
                 self.delete_model_flow()
             elif choice == '3':
-                self.configure_fallbacks_flow()
+                self.set_default_model_flow()
             elif choice == '4':
+                self.configure_fallbacks_flow()
+            elif choice == '5':
                 self.save_config()
                 break
-            elif choice == '5':
+            elif choice == '6':
                 print('Exiting without saving...')
                 break
             else:
