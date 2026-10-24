@@ -29,6 +29,13 @@ from tools import (
     search_web,
 )
 
+import logging
+
+# Disable debug information and suppress LiteLLM warnings
+litellm.suppress_debug_info = True
+litellm.suppress_warnings = True
+logging.getLogger("LiteLLM").setLevel(logging.ERROR)
+logging.getLogger("LiteLLM Router").setLevel(logging.ERROR)
 
 class _FallbackNoticeLogger(CustomLogger):
     """Report Router fallback transitions to stderr.
