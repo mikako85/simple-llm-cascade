@@ -100,6 +100,53 @@ def read_text_document(path: str, max_kb: int = 100) -> str:
         return f"Read error: {e}"
 
 
+def write_file(path: str, content: str):
+    """Write or overwrite a tect file with the provided content.
+
+    Automatically creates the parent directory if it does not exist.
+
+    Args:
+        path (str): Path to the target file (relative or absolute).
+        content (str): Text content to write into the file.
+
+    Returns:
+        Confirmation message with stats, or an error description.
+    """
+    try:
+        if not path or not path.strip():
+            return 'Error: File path cannot be empty'
+
+        target_path = Path(path).resolve()
+
+        if target_path.exists() and target_path.is_dir():
+            return f'Error: Path "{path}" is an existing_directory, not a file'
+
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+        is_overwrite = target_path.exists()
+
+        with open(target_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+        lines_count = len(content.splitlines())
+        chars_count = len(content)
+        action = 'overwritten' if is_overwrite else 'created'
+        return (
+            f'File {path} succesfully {action} '
+            f'{lines_count} lines and {chars_count} characters written'
+        )
+
+    except PermissionError:
+        return f'Permission denied: {path}'
+    except Exception as e:
+        return f'Write error: {e}'
+
+       
+
+
+
+
+
 def search_web(query: str, max_results: int = 5) -> str:
     """Search the web with DuckDuckGo and format the results.
 
@@ -182,3 +229,4 @@ def fetch_url_markdown(url: str) -> str:
         return asyncio.run(_crawl())
     except Exception as e:
         return f'Crawl4AI initialization error: {e}'
+

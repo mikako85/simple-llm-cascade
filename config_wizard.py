@@ -6,9 +6,14 @@ routes, choose the default route and configure the fallback chains, then
 writes the result back to the YAML file.
 """
 
+import os
+import sys
+
 from pathlib import Path
 
 import yaml
+
+from dotenv import set_key
 
 
 class ConfigWizard:
@@ -122,6 +127,28 @@ class ConfigWizard:
         env_var_input = input(f'Environment variable for {litellm_model} (default: {default_env_var}): ').strip()
         api_key_env = env_var_input if env_var_input else default_env_var
 
+        current_val = os.getenv(api_key_env)
+        need_prompt = True
+
+        if current_val:
+            masked = current_val[:4] + '...' + current_val[-4:] if len(current_val) > 8 else '***'
+            print(f'API key for {api_key_env} is already set in system environment({masked}).')
+            override = input('Do you want to override it? (y/n): ').strip().lower()
+            if override not in ['y', 'yes']:
+                need_prompt = False
+
+        if need_prompt:
+            key_val = input(f'Enter API key for {api_key_env} (or press Enter to skip)').strip()
+            if key_val:
+                if not self.env_path.exists():
+                    self.env_path.touch()
+
+                set_key(str(self.env_path), api_key_env, key_val)
+                os.environ[api_key_env] = key_val
+                print(f'Saved {api_key_env} to {self.env_path}')
+            else:
+                print(f'Skipped key saving')
+        
         self.models.append({
             'model_name': model_name,
             'litellm_model': litellm_model,
@@ -449,9 +476,14 @@ class ConfigWizard:
             print('Creating a new configuration file')
 
             wizard = cls(config_path=config_path)
-            wizard.run()
-        else:
-            print('Configuration file already exists')
+            try:
+                wizard.run()
+            except KeyboardInterrupt:
+                print('\nConfiguration cancelled')
+            if not path.exists() or path.stat().st_size == 0:
+                print('Configuration file was not created. Exiting.')
+                sys.exit(1)
+                
 
 
 if __name__ == '__main__':

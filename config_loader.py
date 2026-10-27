@@ -113,7 +113,6 @@ def load_config(config_path: str | Path = 'models.yaml') -> AppConfig:
     """
     path = Path(config_path)
     if not path.exists() or path.stat().st_size == 0:
-        print('Configuration file does not exist or is empty')
         ConfigWizard.ensure_config_exists(config_path)
 
     with open(path, 'r', encoding='utf-8') as f:

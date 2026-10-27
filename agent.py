@@ -25,6 +25,7 @@ from tools import (
     get_system_time,
     list_directory,
     read_text_document,
+    write_file,
     run_bash_command,
     search_web,
 )
@@ -155,6 +156,7 @@ class ChatAgent:
             "get_current_directory": get_current_directory,
             "get_system_time": get_system_time,
             "read_text_document": read_text_document,
+            "write_file": write_file,
             "search_web": search_web,
             "run_bash_command": run_bash_command,
             "list_directory": list_directory,
