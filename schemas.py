@@ -66,6 +66,36 @@ TOOLS_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "write_file",
+            "description": (
+                "Create a new text file or completely overwrite an existing one "
+                "with the specified content. Automatically creates parent directories. "
+                "Use this tool to create new scripts, save refactored code, "
+                "or write configuration and test files. ALWAYS use this instead of "
+                "bash commands (echo, cat) to write files."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": (
+                            "Path to the file to create or overwrite, "
+                            "either relative to the current directory or absolute."
+                        ),
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Full text content to write into the file.",
+                    },
+                },
+                "required": ["path", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "search_web",
             "description": (
                 "Search the web through DuckDuckGo and return a numbered "
