@@ -28,7 +28,7 @@ class SettingsConfig(BaseModel):
 
     default_route: str = Field(..., description='logic route by default')
     temperature: float = Field(0.7, ge=0.0, le=1.0, description='temperature of generation')
-    max_tool_iterations: int = Field(10, ge=0, description='max tool iterations')
+    max_tool_iterations: int = Field(15, ge=0, description='max tool iterations')
     keep_recent_tool_outputs: int = Field(
         3, ge=1, description='number of recent tool outputs to keep unpruned')
     tool_stub_preserve_chars: int = Field(
