@@ -25,6 +25,39 @@ WORKSPACE_DIR = Path(__file__).parent.resolve()
 sandbox_runner = SandboxRunner(project_dir=WORKSPACE_DIR, timeout_sec=30)
 
 
+def _resolve_safe_path(path: str) -> Path:
+    """Resolve a path safely within WORKSPACE_DIR.
+
+    Args:
+        path: Relative path to resolve.
+
+    Returns:
+        Absolute path within WORKSPACE_DIR.
+    """
+    if not path or not path.strip():
+        raise ValueError('File path cannot be empty')
+
+    raw_path = Path(path.strip()).expanduser()
+
+    if not raw_path.is_absolute():
+        resolved_path = (WORKSPACE_DIR / raw_path).resolve()
+    else:
+        resolved_path = raw_path.resolve()
+
+    if not resolved_path.is_relative_to(WORKSPACE_DIR):
+        raise PermissionError(
+            f'Sandbox security violation: Path ""{path}" is not a child of "{WORKSPACE_DIR}"'
+            f'. Use relative paths or $HOME. Access Denied.'
+        )
+
+    if '.git' in resolved_path.parts:
+        raise PermissionError(
+            f'Sandbox security violation: Path ""{path}" contains ".git" in its path. Access Denied.'
+        )
+
+    return resolved_path
+
+
 def run_bash_command(command: str) -> str:
     """Execute a bash command inside the isolated Firejail sandbox.
 
@@ -113,13 +146,10 @@ def write_file(path: str, content: str):
         Confirmation message with stats, or an error description.
     """
     try:
-        if not path or not path.strip():
-            return 'Error: File path cannot be empty'
-
-        target_path = Path(path).resolve()
-
+        target_path = _resolve_safe_path(path)
         if target_path.exists() and target_path.is_dir():
             return f'Error: Path "{path}" is an existing_directory, not a file'
+
 
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
