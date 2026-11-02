@@ -1,9 +1,9 @@
-"""Execution of shell commands inside a Firejail sandbox.
+"""Execution of shell commands with or without Firejail sandbox isolation.
 
-The runner wraps every command in a Firejail profile with network access
-disabled, a private home directory and read-write access limited to the
-project folder. Output is truncated before it reaches the model, so a noisy
-command cannot flood the context window.
+This module provides two execution runners:
+1. SandboxRunner: Runs commands inside an isolated firejail jail (native Linux only).
+2. HostRunner: Runs commands directly on the host (for WSK, ASK, and YOLO modes)
+   with process group isolation, timeout enforcement, and output truncation.
 """
 
 import os
@@ -15,11 +15,10 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class CommandResult:
-    """Outcome of a sandboxed command.
+    """Outcome of an executed command.
 
     Attributes:
-        returncode: Exit code of the command, or -1 when the sandbox itself
-            failed or the command timed out.
+        returncode: Exit code of the command, (or -1 when the runner failure).
         stdout: Captured standard output, possibly truncated.
         stderr: Captured standard error.
         truncated: True when stdout exceeded the configured limit.
@@ -31,22 +30,125 @@ class CommandResult:
     truncated: bool
 
 
-class SandboxRunner:
-    """Run shell commands inside an isolated Firejail environment.
+class BaseCommandRunner:
+    """Base runner managing process lifecycle, timeouts, process groups and truncation."""
 
-    Attributes:
-        project_dir: Absolute path of the only directory the command may
-            write to.
-        sandbox_home: Path the project folder is mounted at inside the
-            sandbox, i.e. the home directory of the sandboxed process.
-        timeout_sec: Hard wall-clock limit for a single command.
-        max_output_chars: Limit applied to stdout before it is returned.
-    """
-
-    # Time allowed for the pipes to drain after the sandbox has been killed,
-    # so a wedged grandchild cannot hang the runner.
     KILL_GRACE_SEC = 5
 
+    def __init__(
+            self,
+            project_dir: str | Path,
+            timeout_sec: int = 30,
+            max_output_chars: int = 15000,
+            ):
+        self.project_dir = Path(project_dir).resolve()
+        self.timeout_sec = timeout_sec
+        self.max_output_chars = max_output_chars
+
+        if not self.project_dir.exists():
+            raise ValueError(
+                f"Project directory does not exist: {self.project_dir}"
+            )
+
+
+    def _execute(self, argv: list[str], env: dict | None = None) -> CommandResult:
+        """Execute a process with timeour, process-group isolation, and output truncation"""
+        try:
+            process = subprocess.Popen(
+                argv,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=str(self.project_dir),
+                text = True,
+                start_new_session=True,
+                env=env,
+            )
+
+        except Exception as e:
+            return CommandResult(
+                    returncode=-1,
+                    stdout='',
+                    stderr=f'Execution error {e}',
+                    truncated=False,
+                )
+
+        try:
+            stdout, stderr = process.communicate(timeout=self.timeout_sec)
+            returncode = process.returncode
+        
+        except subprocess.TimeoutExpired:
+            self._kill_process_group(process)
+
+            try:
+                stdout, stderr = process.communicate(timeout=self.KILL_GRACE_SEC)
+            except subprocess.TimeoutExpired:
+                stdout, stderr = '', ''
+
+            message = f'Command timed out after {self.timeout_sec} seconds.'
+            if stderr:
+                message = f'{message}\n{stderr}'
+
+            stdout, truncated = self._truncate(stdout)
+            return CommandResult(
+                returncode=-1,
+                stdout=stdout,
+                stderr=message,
+                truncated=truncated,
+            )
+
+        stdout, truncated = self._truncate(stdout)
+        return CommandResult(
+            returncode=returncode,
+            stdout=stdout,
+            stderr=stderr,
+            truncated=truncated,
+        )
+
+
+    def _kill_process_group(self, process: subprocess.Popen) -> None:
+        """Kill the spawned process and itd entire process tree"""
+        try:
+            pgid = os.getpgid(process.pid)
+        except OSError:
+            return
+
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(pgid, sig)
+            except OSError:
+                return
+
+            try:
+                process.wait(timeout=2)
+                return
+            except subprocess.TimeoutExpired:
+                continue
+
+
+    def _truncate(self, stdout: str) -> tuple[str, bool]:
+        """Truncate stdout if it exceeds configured limit"""
+        if len(stdout) <= self.max_output_chars:
+            return stdout, False
+
+        if self.max_output_chars <= 0:
+            return '', True
+
+        cut = stdout[:self.max_output_chars]
+        return cut + '\n... (output truncated)', True
+
+
+class HostRunner(BaseCommandRunner):
+    """Run shell commands directly on the host with process group isolation."""
+
+
+    def run(self, command: str) -> CommandResult:
+        """Execute a bash command on the host"""
+        return self._execute(['bash', '-c', command])
+
+
+class SandboxRunner(BaseCommandRunner):
+    """Run shell commands inside an isolated Firejail environment.
+    """
     def __init__(
             self,
             project_dir: str | Path,
@@ -68,15 +170,8 @@ class SandboxRunner:
         Raises:
             ValueError: If project_dir does not exist.
         """
-        self.project_dir = Path(project_dir).resolve()
+        super().__init__(project_dir, timeout_sec, max_output_chars)
         self.sandbox_home = Path(sandbox_home or os.path.expanduser('~'))
-        self.timeout_sec = timeout_sec
-        self.max_output_chars = max_output_chars
-
-        if not self.project_dir.exists():
-            raise ValueError(
-                f"Project directory does not exist: {self.project_dir}"
-            )
 
 
     def run(self, command: str) -> CommandResult:
@@ -115,65 +210,10 @@ class SandboxRunner:
             self._map_paths(command),
         ]
 
-        # /tmp is mounted read-only, but many tools insist on a writable
-        # temporary directory, so point them at the writable /var/tmp.
         env = dict(os.environ)
         env['TMPDIR'] = '/var/tmp'
 
-        try:
-            process = subprocess.Popen(
-                firejail_cmd,
-                cwd=str(self.project_dir),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=env,
-                # Own process group, so the whole process tree stays
-                # killable as one unit.
-                start_new_session=True,
-            )
-        except Exception as e:
-            return CommandResult(
-                returncode=-1,
-                stdout='',
-                stderr=f'System sandbox error: {e}',
-                truncated=False,
-            )
-
-        try:
-            stdout, stderr = process.communicate(timeout=self.timeout_sec)
-            returncode = process.returncode
-
-        except subprocess.TimeoutExpired:
-            self._kill_process_group(process)
-
-            # Collect whatever the command managed to write before the kill.
-            try:
-                stdout, stderr = process.communicate(
-                    timeout=self.KILL_GRACE_SEC
-                )
-            except subprocess.TimeoutExpired:
-                stdout, stderr = '', ''
-
-            message = f'Command timed out after {self.timeout_sec} seconds'
-            if stderr:
-                message = f'{message}\n{stderr}'
-
-            stdout, truncated = self._truncate(stdout)
-            return CommandResult(
-                returncode=-1,
-                stdout=stdout,
-                stderr=message,
-                truncated=truncated,
-            )
-
-        stdout, truncated = self._truncate(stdout)
-        return CommandResult(
-            returncode=returncode,
-            stdout=stdout,
-            stderr=stderr,
-            truncated=truncated,
-        )
+        return self._execute(firejail_cmd, env)
 
 
     def _map_paths(self, command: str) -> str:
@@ -200,49 +240,3 @@ class SandboxRunner:
         return command.replace(real, sandbox)
 
 
-    def _kill_process_group(self, process: subprocess.Popen) -> None:
-        """Kill the sandbox and every process it spawned.
-
-        A subprocess timeout only terminates the direct child, while
-        background jobs started by the command keep running and hold the
-        output pipes open. The child is started in its own session, which
-        makes the whole tree killable with a single signal.
-
-        Args:
-            process: Sandbox process to terminate.
-        """
-        try:
-            pgid = os.getpgid(process.pid)
-        except OSError:
-            return
-
-        for sig in (signal.SIGTERM, signal.SIGKILL):
-            try:
-                os.killpg(pgid, sig)
-            except OSError:
-                return
-
-            try:
-                process.wait(timeout=2)
-                return
-            except subprocess.TimeoutExpired:
-                continue
-
-
-    def _truncate(self, stdout: str) -> tuple[str, bool]:
-        """Cut captured output down to max_output_chars.
-
-        Args:
-            stdout: Raw captured standard output.
-
-        Returns:
-            Tuple of the (possibly shortened) text and a truncation flag.
-        """
-        if len(stdout) <= self.max_output_chars:
-            return stdout, False
-
-        if self.max_output_chars <= 0:
-            return '', True
-
-        cut = stdout[:self.max_output_chars]
-        return cut + '\n... (output truncated)', True
