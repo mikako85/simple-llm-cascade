@@ -29,6 +29,9 @@ from tools import (
     run_bash_command,
     search_web,
 )
+from env_utils import is_firejail_available
+from policy import ExecutionMode, ToolInterceptor
+from tools import set_execution_mode
 
 import logging
 
@@ -125,14 +128,29 @@ class ChatAgent:
 
     """
 
-    def __init__(self, model_name: str | None = None):
-        """Create the router, register the fallback logger and load memory.
+    def __init__(self, model_name: str | None = None, mode: ExecutionMode | str | None = None):
+        """Create the router, register the fallback logger, load memory and security police.
 
         Args:
             model_name: Primary route to use. Defaults to the route from
                 models.yaml.
         """
         self.primary_model = model_name or config.ROUTER_PRIMARY_ROUTE
+
+        requested_mode = ExecutionMode.from_string(mode or getattr(config, 'EXECUTION_MODE', 'ask'))
+        if requested_mode == ExecutionMode.SANDBOX and not is_firejail_available():
+            print(
+                "\n\033[1;33m  WARNING: Sandbox mode (Firejail) is unavailable in this environment (WSL). "
+                "Automatically switched to 'ask' mode.\033[0m\n",
+                file=sys.stderr,
+                flush=True
+            )
+            self.mode = ExecutionMode.ASK
+        else:
+            self.mode = requested_mode
+
+        set_execution_mode(self.mode)
+        self.interceptor = ToolInterceptor(default_mode=self.mode)
 
         fallback_logger = _FallbackNoticeLogger(config.app_config.fallbacks)
 
@@ -335,7 +353,16 @@ class ChatAgent:
                         if function_name not in self.available_functions:
                             function_result = f"Error: function {function_name} not found"
                         else:
-                            target_function = self.available_functions[function_name]
+                            intercept_res = self.interceptor.intercept(
+                                tool_name=function_name,
+                                tool_args=function_args,
+                                current_mode=self.mode,
+                            )
+                            if not intercept_res.allowed:
+                                function_result = intercept_res.rejection_reason
+                                print(f'\033[33m[BLOCKED]\033[0m {intercept_res.rejection_reason}')
+                            else:
+                                target_function = self.available_functions[function_name]
                             try:
                                 function_result = (
                                     target_function(**function_args)
@@ -368,3 +395,11 @@ class ChatAgent:
             f"Tool iteration limit reached "
             f"({config.MAX_TOOL_ITERATIONS})."
         )
+
+
+    def set_mode(self, new_mode: ExecutionMode) -> None:
+        """Dynamically change execution mode and synchronize tools."""
+        self.mode = new_mode
+        self.interceptor.set_mode(new_mode)
+        set_execution_mode(new_mode)
+        
