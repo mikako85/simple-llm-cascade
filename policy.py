@@ -1,14 +1,18 @@
 """Security policies, execution modes, and tool interception logic.
 
 This module defines the agent's operation modes (SANDBOX, YOLO, ASK),
-verifies command safety(e.g. blocking privilege escalation) and prepares
-the interception gateway before tools are executed.
+verifies command safety(e.g. blocking privilege escalation), renders file diffs,
+ and prompts the user for  confirmation when mutating actions are requested.
 """
 
+import difflib
 import re
 import shlex
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
+
+from env_utils import is_firejail_available
 
 
 class ExecutionMode(str, Enum):
@@ -40,7 +44,7 @@ class InterceptResult:
     """
 
     allowed: bool
-    rejection_reason: str
+    rejection_reason: str = ''
 
 #Commands that elevate privileges or switch users
 FORBIDDEN_ROOT_COMMANDS = {'sudo', 'pkexec', 'doas'}
@@ -118,6 +122,76 @@ def check_privilege_escalation(command: str) -> tuple[bool, str]:
     return False, ''
 
 
+def format_file_diff(file_path: str, new_content: str, max_diff_lines: int = 40) -> str:
+    """Generate a colorized unified diff for terminal display."""
+    path = Path(file_path).expanduser()
+    if not path.is_absolute():
+        path = (Path.cwd() / path).resolve()
+
+    # Case : Brand new file
+    if not path.exists():
+        lines = new_content.splitlines()
+        preview = lines[:8]
+        preview_text = "\n".join(f"  \033[32m+ {line}\033[0m" for line in preview)
+        more = f"\n  \033[33m... ({len(lines) - 8} more lines)\033[0m" if len(lines) > 8 else ""
+        return (
+            f"  \033[1;32m[NEW FILE]\033[0m '{file_path}' ({len(lines)} lines, {len(new_content)} bytes)\n"
+            f"{preview_text}{more}"
+        )
+
+    # Case 2 : Overwrite existing file -> Unified diff
+    try:
+        old_content = path.read_text(encoding='utf-8', errors='replace')
+    except Exception as e: 
+        return f"  \033[1;33m[OVERWRITE FILE]\033[0m '{file_path}' (Unable to read original: {e})"
+
+    old_lines = old_content.splitlines(keepends=True)
+    new_lines = new_content.splitlines(keepends=True)
+
+    diff = list(difflib.unified(
+        old_lines,
+        new_lines,
+        fromfile=f'a/{file_path}',
+        tofile=f'b/{file_path}',
+        n=3
+    ))
+
+    if not diff:
+        return f"  \033[33m[NO CHANGES]\033[0m File '{file_path}' content is identical."
+
+    formatted = []
+    truncated = len(diff) > max_diff_lines
+    diff_slice = diff[:max_diff_lines] if truncated else diff
+
+    for line in diff_slice:
+        line_clean = line.rstrip('\n')
+        if line.startswith('+++') or line.startswith('---'):
+            formatted.append(f"  \033[1m{line_clean}\033[0m")
+        elif line.startswith("@@"):
+            formatted.append(f"  \033[36m{line_clean}\033[0m")
+        elif line.startswith("+"):
+            formatted.append(f"  \033[32m{line_clean}\033[0m")
+        elif line.startswith("-"):
+            formatted.append(f"  \033[31m{line_clean}\033[0m")
+        else:
+            formatted.append(f"  {line_clean}")
+
+    if truncated:
+        formatted.append(f"  \033[33m... [diff truncated, total {len(diff)} lines]\033[0m")
+
+    return "\n".join(formatted)
+
+
+def prompt_user_for_confirmation(prompt_text: str = 'Apply this action? [y/N]') -> bool:
+    """Prompt the user for interactive confirmation i nthr terminal."""
+    try:
+        answer = input(prompt_text).strip().lower()
+        return answer in ('y', 'yes')
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+
+
 class ToolInterceptor:
     """Gateway that interxepts tool execution based on the active ExecurionMode."""
     def __init__(self, default_mode: ExecutionMode = ExecutionMode.ASK):
@@ -154,5 +228,57 @@ class ToolInterceptor:
             if is_forbidden:
                 return InterceptResult(allowed=False, rejection_reason=reason)
 
-        # Base Mode Handling (Detailed interactive confirmation for each mode)
+        # YOLO Mode Handling (No interactive confirmation)
+        if mode == ExecutionMode.YOLO:
+            return InterceptResult(allowed=True)
+
+        
+        # SANDBOX Mode -> Verify sandbox availability
+        if mode == ExecutionMode.SANDBOX:
+            if not is_firejail_available():
+                return InterceptResult(
+                    allowed=False,
+                    rejection_reason=(
+                        "Sandbox mode is enabled, but firejail is not available.\n"
+                        "Switch execution mode to 'ask' or 'yolo'."
+                    ),
+                )
+            return InterceptResult(allowed=True)
+
+        # ASK Mode -> Interactive confirmation for mutating operations
+        if mode == ExecutionMode.ASK:
+            if tool_name == 'write_file':
+                path = tool_args.get('path', '')
+                content = tool_args.get('content', '')
+
+                print(f"\n\033[1;34m[ASK MODE]\033[0m Agent wants to write file: \033[1m{path}\033[0m")
+                print(format_file_diff(path, content))
+
+                if not prompt_user_for_confirmation('\033[1mSave changes to this file? [y/N]: \033[0m'):
+                    return InterceptResult(
+                        allowed=False,
+                        rejection_reason=(
+                            f'Action cancelled by user: writing to "{path}" was rejected. '
+                            'Please propose an alternative approach or ask for clarification.'
+                        ),
+                    )
+                return InterceptResult(allowed=True)
+
+            elif tool_name == 'run_bash_command':
+                cmd = tool_args.get('command', '')
+
+                print(f"\n\033[1;34m[ASK MODE]\033[0m Agent wants to execute command:")
+                print(f"  \033[1;33m$\033[0m \033[1m{cmd}\033[0m")
+
+                if not prompt_user_for_confirmation('\033[1mExecute this command? [y/N]: \033[0m'):
+                    return InterceptResult(
+                        allowed=False,
+                        rejection_reason=(
+                            f'Action cancelled by user: command "{cmd}" was rejected. '
+                            'Please propose an alternative approach or ask for clarification.'
+                        ),
+                    )
+                return InterceptResult(allowed=True)
+                
+            # Read-only operations (read_text_document, list_directory) are always allowed
         return InterceptResult(allowed=True)
