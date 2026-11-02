@@ -15,14 +15,25 @@ from pathlib import Path
 from crawl4ai import AsyncWebCrawler
 from ddgs import DDGS
 
-from sandbox_runner import SandboxRunner
+from policy import ExecutionMode
+from sandbox_runner import SandboxRunner, HostRunner
 
 # Working directory used by the sandbox: the folder that contains this file.
 WORKSPACE_DIR = Path(__file__).parent.resolve()
 
-# Shared sandbox runner with a short timeout, because tool results go
-# straight into the model context.
-sandbox_runner = SandboxRunner(project_dir=WORKSPACE_DIR, timeout_sec=30)
+_host_runner = HostRunner(project_dir=WORKSPACE_DIR, timeout_sec=30)
+_sandbox_runner = SandboxRunner(project_dir=WORKSPACE_DIR, timeout_sec=30)
+
+active_runner = _host_runner
+
+
+def set_execution_mode(mode: ExecutionMode) -> None:
+    """Switch active command runner"""
+    global active_runner
+    if mode == ExecutionMode.SANDBOX:
+        active_runner = _sandbox_runner
+    else:
+        active_runner = _host_runner
 
 
 def _resolve_safe_path(path: str) -> Path:
