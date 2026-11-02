@@ -28,6 +28,8 @@ TOOL_STUBS = app_config.settings.tool_stub_preserve_chars
 
 ROUTER_PRIMARY_ROUTE = app_config.settings.default_route
 
+EXECUTION_MODE = app_config.settings.execution_mode
+
 ROUTER_FALLBACKS = [
     {rule.primary: rule.chain} for rule in app_config.fallbacks
 ]

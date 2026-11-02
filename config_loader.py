@@ -34,6 +34,19 @@ class SettingsConfig(BaseModel):
     tool_stub_preserve_chars: int = Field(
         150, ge=1, description='number of characters to preserve in tool stubs'
     )
+    execution_mode: str = Field(
+        'ask', description='execution mode (ask, sandbox, yolo)'
+    )
+
+
+@field_validator('execution_mode')
+@classmethod
+def validate_execution_mode(cls, v: str) -> str:
+    """Ensure execution_mode is one of the supported values."""
+    clean_val = v.strip().lower()
+    if clean_val not in {'ask', 'sandbox', 'yolo'}:
+        raise ValueError('execution_mode must be one of ask, sandbox, yolo')
+    return clean_val
 
 
 class ModelRouteConfig(BaseModel):

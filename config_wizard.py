@@ -44,7 +44,8 @@ class ConfigWizard:
             'temperature': 0.7,
             'max_tool_iterations': 15,
             'keep_recent_tool_outputs': 3,
-            'tool_stub_preserve_chars': 150
+            'tool_stub_preserve_chars': 150,
+            'execution_mode': 'ask',
         }
 
         self.load_existing_config()
@@ -410,6 +411,7 @@ class ConfigWizard:
                 'max_tool_iterations': self.settings.get('max_tool_iterations', 10),
                 'keep_recent_tool_outputs': self.settings.get('keep_recent_tool_outputs', 3),
                 'tool_stub_preserve_chars': self.settings.get('tool_stub_preserve_chars', 150),
+                'execution_mode': self.settings.get('execution_mode', 'ask'),
             },
             'models': self.models,
             'fallbacks': self.fallbacks,
