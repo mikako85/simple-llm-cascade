@@ -66,8 +66,11 @@ def _resolve_safe_path(path: str) -> Path:
             )
     else:
         # YOLO mode and ASK mode
+        if resolved_path ==Path('/') or resolved_path.parent == Path('/'):
+            raise PermissionError('Security policy violation: Writing directly into root "/" is strictly prohibited')
+
         forbidden_system_dirs = {
-            Path('/'), Path('/boot'), Path('/proc'), Path('/sys'), Path('/dev'),
+            Path('/boot'), Path('/proc'), Path('/sys'), Path('/dev'), Path('/etc'), Path('/root'), Path('/mnt/c/Windows')
             }
         for forbidden in forbidden_system_dirs:
             if resolved_path == forbidden or resolved_path.is_relative_to(forbidden):
@@ -192,8 +195,8 @@ def write_file(path: str, content: str):
             f'{lines_count} lines and {chars_count} characters written'
         )
 
-    except PermissionError:
-        return f'Permission denied: {path}'
+    except PermissionError as pe:
+        return f'Security Error {pe}'
     except Exception as e:
         return f'Write error: {e}'
 
