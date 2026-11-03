@@ -28,6 +28,7 @@ from tools import (
     write_file,
     run_bash_command,
     search_web,
+    set_execution_mode
 )
 from env_utils import is_firejail_available
 from policy import ExecutionMode, ToolInterceptor
@@ -185,13 +186,45 @@ class ChatAgent:
         self.messages = [
             {
                 "role": "system",
-                "content": (
-                    "You are a helpful developer assistant.\n\n"
-                    "Long-term project context (SYSTEM_PROMPT.md):\n"
-                    f"{global_memory}"
-                ),
+                "content": self.build_system_prompt()
             },
         ]
+
+
+    def build_system_prompt(self) -> str:
+        """Construct a comprehensive system prompt reflecting the active mode and tools."""
+        global_memory = self.memory.load_global_memory()
+        mode_desc = {
+            ExecutionMode.SANDBOX: 'SANDBOX (bash runs in isolated Firejail, file operations locked to workspace)',
+            ExecutionMode.ASK: 'ASK (runs on host; file mofifications and bash commands require interactive user approval)',
+            ExecutionMode.YOLO: 'YOLO (runs autonomously on host without confirmation prompts '
+        }.get(self.mode, 'Standard')
+
+        return (
+            "You are an expert autonomous developer assistant operating directly in the environment.\n\n"
+            f"### ACTIVE EXECUTION MODE: {mode_desc}\n\n"
+            "### AVAILABLE TOOLS & CAPABILITIES:\n"
+            "- write_file: Creates a new file or completely overwrites an existing file. "
+            "ALWAYS use this tool to write, edit, or create files. Do NOT use bash echo/cat.\n"
+            "- read_text_document: Inspect file contents.\n"
+            "- list_directory: List files and folders.\n"
+            "- run_bash_command: Execute bash commands, git, builds, and tools.\n"
+            "- search_web & fetch_url_markdown: Research online docs and articles.\n"
+            "- get_current_directory & get_system_time: Inspect runtime state.\n\n"
+            "### RULES OF ENGAGEMENT:\n"
+            "1. When asked to create, refactor, or write code to a file, invoke the `write_file` tool.\n"
+            "2. In Sandbox mode, file paths are confined to the workspace. In Ask/YOLO modes, host paths (Desktop, home folder, etc.) are accessible.\n"
+            "3. Answer user questions directly after calling appropriate tools.\n\n"
+            "### LONG-TERM PROJECT CONTEXT (SYSTEM_PROMPT.md):\n"
+        )
+
+
+    def set_mode(self, new_mode: ExecutionMode) -> None:
+        """Dynamically change execution mode and synchronize tools."""
+        self.mode = new_mode
+        self.interceptor.set_mode(new_mode)
+        set_execution_mode(new_mode)
+        
 
 
     def chat(self, user_input: str) -> None:
@@ -363,16 +396,16 @@ class ChatAgent:
                                 print(f'\033[33m[BLOCKED]\033[0m {intercept_res.rejection_reason}')
                             else:
                                 target_function = self.available_functions[function_name]
-                            try:
-                                function_result = (
-                                    target_function(**function_args)
-                                    if function_args
-                                    else target_function()
-                                )
-                            except Exception as exc:
-                                function_result = (
-                                    f"Error while executing {function_name}: {exc}"
-                                )
+                                try:
+                                    function_result = (
+                                        target_function(**function_args)
+                                        if function_args
+                                        else target_function()
+                                    )
+                                except Exception as exc:
+                                    function_result = (
+                                        f"Error while executing {function_name}: {exc}"
+                                    )
 
                     self.messages.append(
                         {
@@ -396,10 +429,3 @@ class ChatAgent:
             f"({config.MAX_TOOL_ITERATIONS})."
         )
 
-
-    def set_mode(self, new_mode: ExecutionMode) -> None:
-        """Dynamically change execution mode and synchronize tools."""
-        self.mode = new_mode
-        self.interceptor.set_mode(new_mode)
-        set_execution_mode(new_mode)
-        

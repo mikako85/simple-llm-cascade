@@ -26,13 +26,15 @@ _sandbox_runner = SandboxRunner(project_dir=WORKSPACE_DIR, timeout_sec=30)
 
 active_runner = _host_runner
 
+current_execution_mode = ExecutionMode.ASK
 
 def set_execution_mode(mode: ExecutionMode) -> None:
-    """Switch active command runner"""
-    global active_runner
+    """Switch active command runner and path policy depending on execution mode"""
+    global active_runner, current_execution_mode
+    current_execution_mode = mode
     if mode == ExecutionMode.SANDBOX:
         active_runner = _sandbox_runner
-    else:
+    elif mode == ExecutionMode.YOLO:
         active_runner = _host_runner
 
 
@@ -55,11 +57,24 @@ def _resolve_safe_path(path: str) -> Path:
     else:
         resolved_path = raw_path.resolve()
 
-    if not resolved_path.is_relative_to(WORKSPACE_DIR):
-        raise PermissionError(
-            f'Sandbox security violation: Path ""{path}" is not a child of "{WORKSPACE_DIR}"'
-            f'. Use relative paths or $HOME. Access Denied.'
-        )
+    # SANDBOX mode security
+    if current_execution_mode == ExecutionMode.SANDBOX:
+        if not resolved_path.is_relative_to(WORKSPACE_DIR):
+            raise PermissionError(
+                f'Sandbox security violation: Path ""{path}" is not a child of "{WORKSPACE_DIR}"'
+                f'. Use relative paths or $HOME. Access Denied.'
+            )
+    else:
+        # YOLO mode and ASK mode
+        forbidden_system_dirs = {
+            Path('/'), Path('/boot'), Path('/proc'), Path('/sys'), Path('/dev'),
+            }
+        for forbidden in forbidden_system_dirs:
+            if resolved_path == forbidden or resolved_path.is_relative_to(forbidden):
+                raise PermissionError(
+                    f'Security policy violation: Mofifying system directory "{forbidden}"'
+                    f'is strictly forbidden. Access Denied.' 
+                )
 
     if '.git' in resolved_path.parts:
         raise PermissionError(
@@ -87,7 +102,7 @@ def run_bash_command(command: str) -> str:
         Formatted report with STDOUT, STDERR and the exit code of the
         command. Sandbox failures are reported in the same shape.
     """
-    result = sandbox_runner.run(command)
+    result = active_runner.run(command)
 
     output = []
     if result.stdout:
@@ -183,11 +198,6 @@ def write_file(path: str, content: str):
         return f'Write error: {e}'
 
        
-
-
-
-
-
 def search_web(query: str, max_results: int = 5) -> str:
     """Search the web with DuckDuckGo and format the results.
 
@@ -271,3 +281,8 @@ def fetch_url_markdown(url: str) -> str:
     except Exception as e:
         return f'Crawl4AI initialization error: {e}'
 
+
+
+
+    
+    

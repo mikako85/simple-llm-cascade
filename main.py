@@ -6,7 +6,8 @@ controllers, everything else is sent to the language model.
 """
 
 from agent import ChatAgent
-from cli_controller import AppCLIController, CLIInputHandler, SessionCLIController
+from cli_controller import (
+    AppCLIController, CLIInputHandler, SessionCLIController, parse_cli_args)
 from config_wizard import ConfigWizard
 
 
@@ -20,12 +21,14 @@ def main():
         None
     """
     ConfigWizard.ensure_config_exists()
-    agent = ChatAgent()
+    chosen_mode = parse_cli_args()
+    agent = ChatAgent(mode=chosen_mode)
     app_controller = AppCLIController(agent)
     session_controller = SessionCLIController(agent)
     input_handler = CLIInputHandler()
 
-    print(f'\n Chat opened with {agent.primary_model}. Type /help for help\n')
+    mode_display = agent.mode.value.upper()
+    print(f'\n Chat opened with {agent.primary_model}. [Mode: {mode_display}] Type /help for help\n')
     session_controller.prompt_session_selection()
 
     while True:

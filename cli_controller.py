@@ -8,6 +8,7 @@ The module separates three concerns:
 """
 
 import os
+import argparse
 
 import yaml
 from prompt_toolkit import PromptSession
@@ -334,3 +335,52 @@ class CLIInputHandler:
             return user_input
         except (KeyboardInterrupt, EOFError):
             raise
+
+
+def parse_cli_args() -> str | None:
+    """Parse command line flags for execution mode overrides
+    
+    Returns: 
+        str | None: Seelcted mode name or None if relying on models.yaml
+    """
+
+    parser = argparse.ArgumentParser(
+        description='Simple LLM Cascade - Interactive AI Developer Assistant'
+    )
+
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
+        '--mode',
+        '-m',
+        choices=['ask', 'yolo', 'sandbox'],
+        help='Explicitly set the execution mode ("ask", "yolo" or "sandbox")'
+    )
+    mode_group.add_argument(
+        '--yolo',
+        '-y',
+        action='store_true',
+        help='Run in autonomous YOLO mode (no confirmation for writes/bash)'
+    )
+    mode_group.add_argument(
+        '--ask',
+        '-a',
+        action='store_true',
+        help='Run in interactive ask mode (confirmation for writes/bash)'
+    )
+    mode_group.add_argument(
+        '--sandbox',
+        '-s',
+        action='store_true',
+        help='Run in sandbox mode (Firejail, native Linux only)'
+    )
+
+    args = parser.parse_args()
+    if args.yolo:
+        return 'yolo'
+    elif args.ask:
+        return 'ask'
+    elif args.sandbox:
+        return 'sandbox'
+    else:
+        return None
+    
