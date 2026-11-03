@@ -17,6 +17,8 @@ from prompt_toolkit.formatted_text import HTML
 from agent import ChatAgent
 from config_wizard import ConfigWizard
 from system_prompt_manager import _edit_system_prompt_interactive
+from env_utils import is_firejail_available, is_wsl
+from policy import ExecutionMode
 
 
 class AppCLIController:
@@ -109,7 +111,9 @@ class AppCLIController:
             True when the input was a known command and has been handled,
             False when the input should be passed on.
         """
-        if user_input.strip() == '/config':
+        cmd_stripped = user_input.strip()
+      
+        if cmd_stripped == '/config':
             wizard = ConfigWizard()
             wizard.run()
             if wizard.default_route:
@@ -117,17 +121,17 @@ class AppCLIController:
                 print(f'Active model set to: {self.agent.primary_model}')
             return True
 
-        if user_input.strip() == '/models':
+        if cmd_stripped == '/models':
             self.show_models_status()
             return True
 
-        if user_input.strip() == '/prompt':
+        if cmd_stripped == '/prompt':
             _edit_system_prompt_interactive()
             return True
 
 
-        if user_input.startswith('/add'):
-            file_path = user_input[len('/add'):].strip()
+        if cmd_stripped.startswith('/add'):
+            file_path = cmd_stripped[len('/add'):]
             if not file_path:
                 print('Please specify the path to the file')
                 return True
@@ -138,8 +142,8 @@ class AppCLIController:
                 print(f'Error adding the file to the context: {e}')
             return True
 
-        if user_input.startswith('/drop'):
-            file_path = user_input[len('/drop'):].strip()
+        if cmd_stripped.startswith('/drop'):
+            file_path = cmd_stripped[len('/drop'):]
             if not file_path:
                 print('Please specify the path to the file')
                 return True
@@ -151,7 +155,7 @@ class AppCLIController:
                 print(f'File {file_path} not found in the context')
             return True
 
-        if user_input.startswith('/files'):
+        if cmd_stripped.startswith('/files'):
             files = self.agent.context.get_files_list()
             if not files:
                 print('No files in the context')
@@ -168,6 +172,48 @@ class AppCLIController:
                     print(f'║ {line:<{box_width-2}} ║')
                 print('╚' + '═' * box_width + '╝\n')
             return True
+
+        # --- КОМАНДА /mode ---
+        if cmd_stripped == '/mode' or cmd_stripped.startswith('/mode '):
+            parts = cmd_stripped.split(maxsplit=1)
+            if len(parts) == 1:
+                current = self.agent.mode.value.upper()
+
+                # Честное и точное определение статуса окружения
+                if is_wsl():
+                    env_status = "WSL environment (Firejail unsupported)"
+                elif is_firejail_available():
+                    env_status = "Native Linux (Firejail ready)"
+                else:
+                    env_status = "Linux (Firejail not installed)"
+
+                print(f"\n⚙️  Current execution mode: \033[1;36m{current}\033[0m ({env_status})")
+                print("Available modes to switch: /mode ask, /mode yolo, /mode sandbox\n")
+                return True
+
+            target_mode_str = parts[1].strip().lower()
+            if target_mode_str not in {'ask', 'yolo', 'sandbox'}:
+                print("❌ Unknown mode. Choose from: 'ask', 'yolo', 'sandbox'")
+                return True
+
+            target_mode = ExecutionMode(target_mode_str)
+
+            # Точная и информативная диагностика при попытке включить sandbox
+            if target_mode == ExecutionMode.SANDBOX:
+                if is_wsl():
+                    print("❌ Cannot switch to 'sandbox': Firejail is not supported inside WSL.")
+                    print("   Please use 'ask' or 'yolo' modes.")
+                    return True
+                elif not is_firejail_available():
+                    print("❌ Cannot switch to 'sandbox': Firejail is not installed on this system.")
+                    print("   Install it via your package manager (e.g. 'sudo apt install firejail') or use 'ask'/'yolo'.")
+                    return True
+
+            # Переключаем режим агента на лету
+            self.agent.set_mode(target_mode)
+            print(f"✅ Execution mode successfully changed to: \033[1;32m{target_mode.value.upper()}\033[0m")
+            return True
+
 
         return False
 
@@ -198,6 +244,8 @@ class SessionCLIController:
         print('║            COMMAND REFERENCE           ║')
         print('╠════════════════════════════════════════╣')
         print('║ Global commands:                       ║')
+        print('║   /mode [name] - View or switch mode   ║')
+        print('║                  (ask / yolo / sandbox)║')
         print('║   /config   - Configuration wizard     ║')
         print('║   /models   - Models and fallbacks     ║')
         print('║   /prompt   - Edit the system prompt   ║')
