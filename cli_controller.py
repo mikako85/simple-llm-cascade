@@ -15,6 +15,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 
 from agent import ChatAgent
+from app_paths import CONFIG_FILE
 from config_wizard import ConfigWizard
 from system_prompt_manager import _edit_system_prompt_interactive
 from env_utils import is_firejail_available, is_wsl
@@ -46,9 +47,9 @@ class AppCLIController:
         Returns:
             None
         """
-        config_path = "models.yaml"
+        config_path = CONFIG_FILE
 
-        if not os.path.exists(config_path):
+        if not config_path.exists():
             print("❌ Configuration file models.yaml not found.")
             return
 

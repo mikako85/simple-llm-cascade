@@ -12,9 +12,11 @@ import json
 import os
 from datetime import datetime
 
-MEMORY_DIR = 'memory'
-SESSIONS_DIR = os.path.join(MEMORY_DIR, 'sessions')
-MEMORY_FILE = os.path.join(MEMORY_DIR, 'SYSTEM_PROMPT.md')
+from app_paths import MEMORY_DIR, SESSIONS_DIR, GLOBAL_PROMPT_FILE
+
+# MEMORY_DIR = 'memory'
+# SESSIONS_DIR = os.path.join(MEMORY_DIR, 'sessions')
+# MEMORY_FILE = os.path.join(MEMORY_DIR, 'SYSTEM_PROMPT.md')
 
 DEFAULT_MEMORY_TEMPLATE = (
     '# Agent project memory\n\n'
@@ -31,12 +33,10 @@ class MemoryManager:
 
     def __init__(self):
         """Create the memory folders and the memory file when missing."""
-        os.makedirs(SESSIONS_DIR, exist_ok=True)
-        if not os.path.exists(MEMORY_FILE):
-            with open(MEMORY_FILE, 'w', encoding='utf-8') as f:
+        SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+        if not GLOBAL_PROMPT_FILE.exists():
+            with open(GLOBAL_PROMPT_FILE, 'w', encoding='utf-8') as f:
                 f.write(DEFAULT_MEMORY_TEMPLATE)
-
-        self.current_session_file = None
 
 
     def load_global_memory(self) -> str:
@@ -46,11 +46,10 @@ class MemoryManager:
             Content of the memory file, or an empty string when the file
             does not exist.
         """
-        if os.path.exists(MEMORY_FILE):
-            with open(MEMORY_FILE, 'r', encoding='utf-8') as f:
+        if GLOBAL_PROMPT_FILE.exists():
+            with open(GLOBAL_PROMPT_FILE, 'r', encoding='utf-8') as f:
                 return f.read()
         return ''
-
 
     def list_sessions(self) -> list:
         """List the available dialogue sessions.

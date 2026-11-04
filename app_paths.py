@@ -9,7 +9,7 @@ SESSIONS_DIR = MEMORY_DIR / 'sessions'
 GLOBAL_PROMPT_FILE = MEMORY_DIR / 'SYSTEM_PROMPT.md'
 
 
-def ensure_data_dir():
+def ensure_app_dirs_exist():
     """Guarantee the existence of the app data directory."""
     APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)

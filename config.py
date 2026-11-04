@@ -9,15 +9,19 @@ chains of the LiteLLM router.
 import os
 
 from dotenv import load_dotenv
-
+from app_paths import CONFIG_FILE, ENV_FILE, ensure_app_dirs_exist
 from config_loader import AppConfig, load_config
 
-load_dotenv()
+ensure_app_dirs_exist()
+
+load_dotenv(dotenv_path=ENV_FILE)
+load_dotenv(override=False)
+
 
 try:
-    app_config: AppConfig = load_config('models.yaml')
+    app_config: AppConfig = load_config(CONFIG_FILE)
 except (FileNotFoundError, ValueError) as e:
-    print(f"Error loading config: {e}. Need to create models.yaml file")
+    print(f'Error loading config {e} Need to create models.yaml file')
     raise
 
 TEMPERATURE = app_config.settings.temperature

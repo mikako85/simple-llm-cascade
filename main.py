@@ -6,9 +6,11 @@ controllers, everything else is sent to the language model.
 """
 
 from agent import ChatAgent
+from app_paths import CONFIG_FILE
 from cli_controller import (
     AppCLIController, CLIInputHandler, SessionCLIController, parse_cli_args)
 from config_wizard import ConfigWizard
+
 
 
 def main():
@@ -20,7 +22,7 @@ def main():
     Returns:
         None
     """
-    ConfigWizard.ensure_config_exists()
+    ConfigWizard.ensure_config_exists(CONFIG_FILE)
     chosen_mode = parse_cli_args()
     agent = ChatAgent(mode=chosen_mode)
     app_controller = AppCLIController(agent)

@@ -13,6 +13,7 @@ from pathlib import Path
 
 import yaml
 
+from app_paths import CONFIG_FILE, ENV_FILE
 from dotenv import set_key
 
 
@@ -28,7 +29,7 @@ class ConfigWizard:
         settings: Global settings such as temperature and iteration limit.
     """
 
-    def __init__(self, config_path: str = 'models.yaml', env_path: str = '.env'):
+    def __init__(self, config_path: str | Path = CONFIG_FILE, env_path: str | Path = ENV_FILE):
         """Load the existing configuration, if any.
 
         Args:
