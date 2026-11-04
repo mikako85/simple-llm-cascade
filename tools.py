@@ -19,13 +19,11 @@ from policy import ExecutionMode
 from sandbox_runner import SandboxRunner, HostRunner
 
 # Working directory used by the sandbox: the folder that contains this file.
-WORKSPACE_DIR = Path(__file__).parent.resolve()
+WORKSPACE_DIR = Path.cwd().resolve()
 
 _host_runner = HostRunner(project_dir=WORKSPACE_DIR, timeout_sec=30)
 _sandbox_runner = SandboxRunner(project_dir=WORKSPACE_DIR, timeout_sec=30)
-
 active_runner = _host_runner
-
 current_execution_mode = ExecutionMode.ASK
 
 def set_execution_mode(mode: ExecutionMode) -> None:
