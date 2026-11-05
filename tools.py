@@ -9,6 +9,8 @@ raised to the caller.
 
 import asyncio
 import os
+import sys
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -268,6 +270,10 @@ def fetch_url_markdown(url: str) -> str:
         Page content as raw Markdown, or an error message when the page
         could not be loaded.
     """
+
+    if not _ensure_playwright_browser_installed():
+        return 'Error: Headless browser is not installed and auto-download failed'
+
     async def _crawl():
         """Render the page and return its Markdown or an error text."""
         async with AsyncWebCrawler(verbose=False) as crawler:
@@ -281,6 +287,27 @@ def fetch_url_markdown(url: str) -> str:
         return asyncio.run(_crawl())
     except Exception as e:
         return f'Crawl4AI initialization error: {e}'
+
+
+def _ensure_playwright_browser_installed() -> bool:
+    """Check if Playwright is installed."""
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.executable_path
+        return True
+    except Exception:
+        print('\n First-time setup: Downloading headless Chromium for web browsing (crawl4ai)')
+        try:
+            subprocess.run(
+                [sys.executable, '-m', 'playwright', 'install', 'chromium'],
+                check=True
+            )
+            print('Chromium installed Succesfully!\n')
+            return True
+        except Exception as e:
+            print(f'Chromium installation error: {e}\n')
+            return False
 
 
 
