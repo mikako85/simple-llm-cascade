@@ -233,7 +233,7 @@ class ChatAgent:
         """Reload the router model and tools on the runtime"""
         import importlib
         import config
-        importlib.reload()
+        importlib.reload(config)
 
         self.primary_model = config.ROUTER_PRIMARY_ROUTE
         self.router = Router(
