@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "simple-llm-cascade"
+version = "0.1.0"
+description = "Autonomous interactive AI developer assistant with multi-model fallback cascade"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [ { name = "mikako" } ]
+
+dependencies = [
+    "litellm>=1.0.0",
+    "openai>=1.0.0",
+    "groq>=0.4.0",
+    "mistralai>=0.1.0",
+    "prompt-toolkit>=3.0.0",
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0.0",
+     "ddgs>=7.0.0",
+    "crawl4ai>=0.4.0",
+    "playwright>=1.40.0",
+    "mcp>=1.0.0",
+]
+
+[project.scripts]
+cascade = "main:main"
+
+[tool.hatch.build.targets.wheel]
+include = [
+    ".py",
+    "memory/**/*",
+]
+
+
