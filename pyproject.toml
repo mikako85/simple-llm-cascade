@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "simple-llm-cascade"
@@ -29,10 +29,26 @@ dependencies = [
 [project.scripts]
 cascade = "main:main"
 
-[tool.hatch.build.targets.wheel]
-include = [
-    ".py",
-    "memory/**/*",
+[tool.setuptools]
+py-modules = [
+    "agent",
+    "app_paths",
+    "cli_controller",
+    "config",
+    "config_loader",
+    "config_wizard",
+    "context_utils",
+    "env_utils",
+    "file_utils",
+    "main",
+    "memory_manager",
+    "policy",
+    "sandbox_runner",
+    "schemas",
+    "system_prompt_manager",
+    "tools",
 ]
 
+[tool.setuptools.package-data]
+"*" = ["memory/**/*"]
 
