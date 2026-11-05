@@ -16,11 +16,11 @@ Interactive autonomous AI developer assistant operating directly in your environ
 
 Using `uv` (recommended):
 ```bash
-uv tool install git+https://github.com/ваш-логин/simple-llm-cascade.git
+uv tool install git+https://github.com/mikako85/simple-llm-cascade.git
 ```
 or using pipx:
 ```bash 
-pipx install git+https://github.com/ваш-логин/simple-llm-cascade.git
+pipx install git+https://github.com/mikako85/simple-llm-cascade.git
 ```
 
 ## Usage
