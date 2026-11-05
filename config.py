@@ -15,8 +15,8 @@ from config_loader import AppConfig, load_config
 
 ensure_app_dirs_exist()
 
-CONFIG_FILE = get_config_file
-ENV_FILE = get_env_file
+CONFIG_FILE = get_config_file()
+ENV_FILE = get_env_file()
 
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
