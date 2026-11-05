@@ -294,7 +294,7 @@ def _ensure_playwright_browser_installed() -> bool:
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
-            browser = p.chromium.executable_path
+            _ = p.chromium.executable_path
         return True
     except Exception:
         print('\n First-time setup: Downloading headless Chromium for web browsing (crawl4ai)')

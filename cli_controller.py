@@ -117,9 +117,8 @@ class AppCLIController:
         if cmd_stripped == '/config':
             wizard = ConfigWizard()
             wizard.run()
-            if wizard.default_route:
-                self.agent.primary_model = wizard.default_route
-                print(f'Active model set to: {self.agent.primary_model}')
+            self.agent.reload_router()
+            print(f'Active model set to: {self.agent.primary_model}')
             return True
 
         if cmd_stripped == '/models':

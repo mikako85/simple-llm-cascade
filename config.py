@@ -9,13 +9,16 @@ chains of the LiteLLM router.
 import os
 
 from dotenv import load_dotenv
-from app_paths import CONFIG_FILE, ENV_FILE, ensure_app_dirs_exist
+from app_paths import (CONFIG_FILE, ENV_FILE, 
+                       ensure_app_dirs_exist, get_config_file, get_env_file)
 from config_loader import AppConfig, load_config
 
 ensure_app_dirs_exist()
 
-load_dotenv(dotenv_path=ENV_FILE)
-load_dotenv(override=False)
+CONFIG_FILE = get_config_file
+ENV_FILE = get_env_file
+
+load_dotenv(dotenv_path=ENV_FILE, override=True)
 
 
 try:

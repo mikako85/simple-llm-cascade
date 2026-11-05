@@ -224,7 +224,24 @@ class ChatAgent:
         self.mode = new_mode
         self.interceptor.set_mode(new_mode)
         set_execution_mode(new_mode)
-        
+
+        if self.messages and self.messages[0].get('role') == 'system':
+            self.messages[0]['content'] = self.build_system_prompt()
+
+
+    def reload_router(self) -> None:
+        """Reload the router model and tools on the runtime"""
+        import importlib
+        import config
+        importlib.reload()
+
+        self.primary_model = config.ROUTER_PRIMARY_ROUTE
+        self.router = Router(
+            model_list=config.build_router_model_list(),
+            fallbacks=config.ROUTER_FALLBACKS,
+            set_verbose=False,
+            num_retries=0,
+        )
 
 
     def chat(self, user_input: str) -> None:
