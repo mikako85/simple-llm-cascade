@@ -9,7 +9,10 @@
 [![Powered by LiteLLM](https://img.shields.io/badge/Router-LiteLLM-purple.svg)](https://github.com/BerriAI/litellm)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-<img src="assets/preview.png" alt="Simple LLM Cascade Demo" width="900"/>
+
+https://github.com/user-attachments/assets/ac6b5fea-1610-42cc-b2d1-f73c51e0d83e
+
+
 
 </div>
 
