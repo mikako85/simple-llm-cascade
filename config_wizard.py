@@ -43,7 +43,7 @@ class ConfigWizard:
         self.fallbacks: list[dict] = []
         self.settings: dict = {
             'temperature': 0.7,
-            'max_tool_iterations': 15,
+            'max_tool_iterations': 30,
             'keep_recent_tool_outputs': 3,
             'tool_stub_preserve_chars': 150,
             'execution_mode': 'ask',
@@ -409,7 +409,7 @@ class ConfigWizard:
             'settings': {
                 'default_route': self.default_route,
                 'temperature': self.settings.get('temperature', 0.7),
-                'max_tool_iterations': self.settings.get('max_tool_iterations', 10),
+                'max_tool_iterations': self.settings.get('max_tool_iterations', 30),
                 'keep_recent_tool_outputs': self.settings.get('keep_recent_tool_outputs', 3),
                 'tool_stub_preserve_chars': self.settings.get('tool_stub_preserve_chars', 150),
                 'execution_mode': self.settings.get('execution_mode', 'ask'),
