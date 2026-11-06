@@ -44,8 +44,8 @@ class ConfigWizard:
         self.settings: dict = {
             'temperature': 0.7,
             'max_tool_iterations': 30,
-            'keep_recent_tool_outputs': 3,
-            'tool_stub_preserve_chars': 150,
+            'keep_recent_tool_outputs': 20,
+            'tool_stub_preserve_chars': 1500,
             'execution_mode': 'ask',
         }
 

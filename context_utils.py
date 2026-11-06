@@ -6,7 +6,8 @@ from typing import Any
 def prune_tool_message(
     messages: list[dict[str, Any]],
     keep_last_n: int = 3,
-    preserve_chars: int = 150,
+    preserve_chars: int = 1500,
+    max_total_chars: int = 120000,
 ) -> list[dict[str, Any]]:
     """Prune older tool execution outputs to prevent context overflow
 
@@ -29,6 +30,11 @@ def prune_tool_message(
 
     if keep_last_n < 0:
         keep_last_n = 0
+
+    total_chars = sum(len(str(m.get('content', ) or '')) for m in messages)
+
+    if total_chars <= max_total_chars:
+        return messages
 
     tool_count = 0
     optimized_reversed = []

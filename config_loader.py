@@ -30,9 +30,9 @@ class SettingsConfig(BaseModel):
     temperature: float = Field(0.7, ge=0.0, le=1.0, description='temperature of generation')
     max_tool_iterations: int = Field(30, ge=0, description='max tool iterations')
     keep_recent_tool_outputs: int = Field(
-        3, ge=1, description='number of recent tool outputs to keep unpruned')
+        20, ge=1, description='number of recent tool outputs to keep unpruned')
     tool_stub_preserve_chars: int = Field(
-        150, ge=1, description='number of characters to preserve in tool stubs'
+        1500, ge=1, description='number of characters to preserve in tool stubs'
     )
     execution_mode: str = Field(
         'ask', description='execution mode (ask, sandbox, yolo)'
