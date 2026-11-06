@@ -23,7 +23,7 @@ If your primary model hits rate limits (HTTP 429), server downtime (HTTP 500), o
 
 ---
 
-## ✨ Key Highlights
+## Key Highlights
 
 - **Resilient Model Cascades**: Define primary routes and ordered fallback chains powered by LiteLLM Router.
 - **Three Autonomy & Security Modes**: Choose between strict interactive review (`ASK`), isolated containerization (`SANDBOX`), or full host autonomy (`YOLO`).
@@ -310,7 +310,7 @@ cascade -m sandbox
 
 ---
 
-## 🧠 Context Management & Token Optimization
+## Context Management & Token Optimization
 
 To prevent conversation context overflow during long autonomous sessions:
 * **Tool Message Pruning**: Cascade automatically keeps the last `keep_recent_tool_outputs` (default: `3`) tool outputs intact. Older tool results are safely truncated to compact preview stubs (`tool_stub_preserve_chars: 150`) while retaining standard API `tool_call_id` mapping.
