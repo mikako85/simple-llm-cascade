@@ -47,10 +47,13 @@ def _resolve_safe_path(path: str) -> Path:
     Returns:
         Absolute path within WORKSPACE_DIR.
     """
+    
     if not path or not path.strip():
         raise ValueError('File path cannot be empty')
 
     raw_path = Path(path.strip()).expanduser()
+    resolved_path = (WORKSPACE_DIR / raw_path).resolve() if not raw_path.is_absolute() else raw_path.resolve()
+
 
     if not raw_path.is_absolute():
         resolved_path = (WORKSPACE_DIR / raw_path).resolve()
@@ -64,20 +67,36 @@ def _resolve_safe_path(path: str) -> Path:
                 f'Sandbox security violation: Path ""{path}" is not a child of "{WORKSPACE_DIR}"'
                 f'. Use relative paths or $HOME. Access Denied.'
             )
-    else:
-        # YOLO mode and ASK mode
-        if resolved_path ==Path('/') or resolved_path.parent == Path('/'):
-            raise PermissionError('Security policy violation: Writing directly into root "/" is strictly prohibited')
 
-        forbidden_system_dirs = {
-            Path('/boot'), Path('/proc'), Path('/sys'), Path('/dev'), Path('/etc'), Path('/root'), Path('/mnt/c/Windows')
-            }
-        for forbidden in forbidden_system_dirs:
-            if resolved_path == forbidden or resolved_path.is_relative_to(forbidden):
-                raise PermissionError(
-                    f'Security policy violation: Mofifying system directory "{forbidden}"'
-                    f'is strictly forbidden. Access Denied.' 
-                )
+    user_home = Path.home().resolve()
+    sensitive_home_targets = {
+        user_home / '.ssh',
+        user_home / '.aws',
+        user_home / '.gnupg',
+        user_home / '.bashrc',
+        user_home / '.bash_profile',
+        user_home / '.zshrc',
+        user_home / '.profile',
+        user_home / '.config' / 'autostart',
+        user_home / '.simple-llm-cascade',
+    }
+
+    for sensitive in sensitive_home_targets:
+        if resolved_path == sensitive or resolved_path.is_relative_to(sensitive):
+            raise PermissionError(
+                f'Security policy violation: Access to sensitive path "{sensitive}" is forbidden. Access Denied.'
+            )
+
+    forbidden_system_dirs = {
+        Path('/boot'), Path('/proc'), Path('/sys'), Path('/dev'), 
+        Path('/etc'), Path('/root'), Path('/var'), Path('/mnt/c/Windows'), 
+    }
+
+    for forbidden in forbidden_system_dirs:
+        if resolved_path == forbidden or resolved_path.is_relative_to(forbidden):
+            raise PermissionError(
+                f'Security policy violation: Access to path "{forbidden}" is forbidden. Access Denied.'
+            )
 
     if '.git' in resolved_path.parts:
         raise PermissionError(
@@ -147,19 +166,24 @@ def read_text_document(path: str, max_kb: int = 100) -> str:
         File content, or a human-readable error message when the file is
         missing, too large or cannot be read.
     """
+
     try:
-        if not os.path.exists(path):
+        target_path = _resolve_safe_path(path)
+        if not target_path.exists():
             return f"File not found: {path}"
-
-        file_size_kb = os.path.getsize(path) / 1024
-
+        if target_path.is_dir():
+            return f"Path is a directory, not a file: {path}"
+        
+        file_size_kb = target_path.stat().st_size / 1024
         if file_size_kb > max_kb:
             return f"File size exceeds {max_kb} KB"
-        with open(path, 'r', encoding='utf-8') as f:
-            content = f.read()
-            return content if content else 'File is empty'
+
+        content = target_path.read_text(encoding='utf-8', errors='replace')
+        return content if content else 'Empty file'
+    except PermissionError as pe:
+        return f'Security Violation: {pe}'
     except Exception as e:
-        return f"Read error: {e}"
+        return f'File read error: {e}'
 
 
 def write_file(path: str, content: str):
@@ -242,7 +266,7 @@ def list_directory(path: str = '.') -> str:
         does not exist or is not a directory.
     """
     try:
-        target_path = Path(path).resolve()
+        target_path = _resolve_safe_path(path)
         if not target_path.exists():
             return f'Directory not found: {path}'
         if not target_path.is_dir():
@@ -252,6 +276,8 @@ def list_directory(path: str = '.') -> str:
             name = f'{entry.name}/' if entry.is_dir() else entry.name
             items.append(name)
         return '\n'.join(items) if items else 'Empty directory'
+    except PermissionError as pe:
+        return f'Security Violation: {pe}'
     except Exception as e:
         return f'Directory listing error: {e}'
 

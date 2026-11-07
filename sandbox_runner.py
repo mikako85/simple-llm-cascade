@@ -30,6 +30,27 @@ class CommandResult:
     truncated: bool
 
 
+def get_sanitized_env() -> dict[str, str]:
+    """Return a clean environment dict stripped of all secrets and API keys"""
+    allowed_passthrough = {
+        'PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_ALL', 'TERM',
+        'TMPDIR', 'XDG_RUNTIME_DIR', 'WSL_DISTRO_NAME', 'WSL_INTEROP'
+    }
+
+    clean_env = {}
+    for key, value in os.environ.items():
+        upper_key = key.upper()
+        if any(secret_word in upper_key for secret_word in ['API_KEY', 'KEY', 'SECRET',
+                                                            'PASSWORD', 'TOKEN',
+                                                            'AUTH', 'CREDENTIALS']):
+            continue
+        if key in allowed_passthrough or key.startswith('LC_'):
+            clean_env[key] = value
+
+    return clean_env
+
+
+
 class BaseCommandRunner:
     """Base runner managing process lifecycle, timeouts, process groups and truncation."""
 
@@ -53,6 +74,7 @@ class BaseCommandRunner:
 
     def _execute(self, argv: list[str], env: dict | None = None) -> CommandResult:
         """Execute a process with timeour, process-group isolation, and output truncation"""
+        execution_env = env if env is not None else get_sanitized_env()
         try:
             process = subprocess.Popen(
                 argv,
@@ -61,7 +83,7 @@ class BaseCommandRunner:
                 cwd=str(self.project_dir),
                 text = True,
                 start_new_session=True,
-                env=env,
+                env=execution_env,
             )
 
         except Exception as e:
@@ -210,7 +232,7 @@ class SandboxRunner(BaseCommandRunner):
             self._map_paths(command),
         ]
 
-        env = dict(os.environ)
+        env = get_sanitized_env()
         env['TMPDIR'] = '/var/tmp'
 
         return self._execute(firejail_cmd, env)
