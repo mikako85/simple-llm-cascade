@@ -12,28 +12,8 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+from prompt_toolkit import prompt
 from env_utils import is_firejail_available
-
-FORBIDDEN_ROOT_COMMANDS = {'sudo', 'pkexec', 'doas'}
-FORBIDDEN_INTERPRETERS = {'sh', 'bash', 'zsh', 'dash', 'ksh', 'python', 'python3', 'perl', 'ruby'}
-
-COMMAND_WRAPPERS = {
-    'env', 'time', 'exec', 'xargs', 'command',
-    'builtin', 'nice', 'timeout', 'strace', 'nohup', 'ltrace', 'eval'
-}
-
-COMMAND_DELIMITERS = {';', '&&', '||', '|', '&', '\n', '`', '$(', '(', ')', '{', '}'}
-
-SENSITIVE_PATH_PATTERNS = [
-    r'~/\.simple-llm-cascade',
-    r'/\.simple-llm-cascade',
-    r'~/\.ssh',
-    r'~/\.aws',
-    r'~/\.gnupg',
-    r'/etc/shadow',
-    r'/etc/sudoers',
-    r'(?:^|[\s/])\.env(?:\.[\w-]+)?(?:\s|$)', # Любые .env файлы
-]
 
 
 class ExecutionMode(str, Enum):
@@ -67,42 +47,53 @@ class InterceptResult:
     allowed: bool
     rejection_reason: str = ''
 
-#Commands that elevate privileges or switch users
 FORBIDDEN_ROOT_COMMANDS = {'sudo', 'pkexec', 'doas'}
 
-#Command wrappers that execute the subsequent argument as command
-COMMAND_WRAPPERS = {'env', 'time', 'nohup', 'exec', 'xargs'}
+INSPECTED_INTERPRETERS = {'sh', 'bash', 'zsh', 'dash', 'ksh', 'python', 'python3', 'perl', 'ruby'}
 
-COMMAND_DELIMITERS = {';', '&&', '||', '|', '&', '\n', '`', '$(', '(', ')'}
+COMMAND_WRAPPERS = {
+    'env', 'time', 'nohup', 'exec', 'xargs', 'command',
+    'builtin', 'nice', 'timeout', 'strace', 'ltrace', 'eval'
+}
+
+COMMAND_DELIMITERS = {';', '&&', '||', '|', '&', '\n', '`', '$(', '(', ')', '{', '}'}
+
+SENSITIVE_PATH_PATTERNS = [
+    r'~/\.simple-llm-cascade',
+    r'/\.simple-llm-cascade',
+    r'~/\.ssh',
+    r'~/\.aws',
+    r'~/\.gnupg',
+    r'/etc/shadow',
+    r'/etc/sudoers',
+    r'(?:^|[\s/])\.env(?:\.[\w-]+)?(?:\s|$)',
+]
+
 
 def check_privilege_escalation(command: str, depth: int = 0) -> tuple[bool, str]:
-    """Inspect bash command line for privilege escalation and secret exfiltration.
-    
-    Performs recursive AST-like inspection of command strings, subshells,
-    wrapper commands, interpreter payloads (-c), and find -exec clauses.
-    """
+    """Inspect bash command line for privilege escalation and secret exfiltration."""
     if not command or not command.strip():
         return False, ''
 
-    if depth > 5:  # Защита от бесконечной рекурсии
+    if depth > 5:
         return True, 'Security violation: Command nesting depth exceeded limit.'
 
-    # 1. Защита от утечки секретов через bash (cat .env, cat ~/.ssh/...)
+    # 1. Защита от прямого доступа к файлам секретов в bash
     for pattern in SENSITIVE_PATH_PATTERNS:
         if re.search(pattern, command, re.IGNORECASE):
             return (
                 True,
-                'Security policy violation: Direct command-line access to sensitive secret storage/credentials is strictly forbidden.'
+                'Security policy violation: Direct command-line access to sensitive credentials or environment files is strictly forbidden.'
             )
 
-    # 2. Блокировка опасных пайпов в шелл (echo c3Vkbw== | base64 -d | sh, curl | bash)
+    # 2. Защита от пайпов в шелл (echo ... | sh, base64 | bash)
     if re.search(r'\|\s*(?:ba|da|z)?sh\b', command):
         return (
             True,
             'Security policy violation: Piping dynamic output directly into a shell interpreter is strictly prohibited.'
         )
 
-    # 3. Быстрая regex-проверка подозрительных конструкций
+    # 3. Базовая быстрая проверка запрещенных бинарников
     raw_forbidden_check = re.search(r'(?:^|[;&|`\n\(\)\{]|\$\()\s*(sudo|doas|pkexec|su)(?:\s+|$)', command)
     if raw_forbidden_check:
         forbidden_bin = raw_forbidden_check.group(1)
@@ -115,7 +106,6 @@ def check_privilege_escalation(command: str, depth: int = 0) -> tuple[bool, str]
         lexer.commenters = ''
         tokens = list(lexer)
     except Exception:
-        # Если shlex упал на незакрытых кавычках, блокируем небезопасную строку
         return True, 'Security policy violation: Malformed command string or unclosed quotes.'
 
     idx = 0
@@ -124,45 +114,55 @@ def check_privilege_escalation(command: str, depth: int = 0) -> tuple[bool, str]
     while idx < num_tokens:
         token = tokens[idx]
 
-        # Разделители команд: следующий токен снова будет началом команды
         if token in COMMAND_DELIMITERS or any(sep in token for sep in (';', '&&', '||', '|', '(', ')', '{', '}')):
             idx += 1
             continue
 
-        # Пропуск переменных окружения (VAR=val cmd)
         if '=' in token and not token.startswith('='):
             idx += 1
             continue
 
-        # Извлекаем чистое имя исполняемого файла (/usr/bin/sudo -> sudo)
         cmd_name = token.strip().split('/')[-1]
 
-        # Проверка привилегированных бинарников
+        # Блокировка динамической подстановки команд в позиции бинарника: $(echo sudo) id
+        if cmd_name.startswith('$(') or cmd_name.startswith('`'):
+            return True, 'Security policy violation: Dynamic command substitution in executable position is prohibited.'
+
         if cmd_name in FORBIDDEN_ROOT_COMMANDS:
             return True, f'Security policy violation: Privilege escalation ("{cmd_name}") is strictly forbidden.'
         if cmd_name == 'su':
             return True, 'Security policy violation: Switching user accounts ("su") is strictly forbidden.'
 
-        # Пропуск обёрток (env, nice, timeout, xargs, command и т.д.) и их флагов
+        # Обработка оберток: пропускаем флаги и специфичные аргументы (таймауты, nice-уровни)
         if cmd_name in COMMAND_WRAPPERS:
             idx += 1
+            # eval: собирает всё остальное и рекурсивно исполняет как shell-команду
+            if cmd_name == 'eval':
+                eval_payload = ' '.join(tokens[idx:])
+                return check_privilege_escalation(eval_payload, depth + 1)
+
             while idx < num_tokens:
                 sub_token = tokens[idx]
-                # Пропускаем флаги оберток (например -i, -u, -n, -v) и присваивания VAR=val
+                # Пропускаем флаги (-i, -n, -v и т.д.) и переменные (VAR=val)
                 if sub_token.startswith('-') or ('=' in sub_token and not sub_token.startswith('=')):
                     idx += 1
                     continue
-                # Нашли саму запускаемую команду
+                # Для timeout пропускаем аргумент длительности (например 5, 10s, 1m)
+                if cmd_name == 'timeout' and re.match(r'^\d+(\.\d+)?[smhd]?$', sub_token):
+                    idx += 1
+                    continue
+                # Для nice пропускаем числовой приоритет
+                if cmd_name == 'nice' and re.match(r'^-?\d+$', sub_token):
+                    idx += 1
+                    continue
                 break
             continue
 
-        # Проверка find ... -exec cmd {} \;
+        # Проверка find ... -exec cmd \;
         if cmd_name == 'find':
-            # Ищем конструкцию -exec или -execdir
             exec_indices = [i for i, t in enumerate(tokens[idx:], start=idx) if t in ('-exec', '-execdir')]
             for e_idx in exec_indices:
                 if e_idx + 1 < num_tokens:
-                    # Рекурсивно проверяем команду после -exec
                     sub_cmd_tokens = []
                     for t in tokens[e_idx + 1:]:
                         if t in (';', '\\;', '+'):
@@ -174,25 +174,28 @@ def check_privilege_escalation(command: str, depth: int = 0) -> tuple[bool, str]
             idx += 1
             continue
 
-        # Рекурсивный разбор для интерпретаторов с флагом -c (bash -c "...", python -c "...")
-        if cmd_name in FORBIDDEN_INTERPRETERS or cmd_name.startswith('python'):
+        # Интерпретаторы (python, bash, sh, perl...) с флагом -c
+        if cmd_name in INSPECTED_INTERPRETERS or cmd_name.startswith('python'):
             idx += 1
-            while idx < num_tokens:
+            while idx < num_tokens and tokens[idx] not in COMMAND_DELIMITERS:
                 arg = tokens[idx]
-                if arg in ('-c', '-ic', '-c'):
+                if arg in ('-c', '-ic'):
                     if idx + 1 < num_tokens:
                         sub_cmd = tokens[idx + 1]
-                        # Проверяем полезную нагрузку внутри -c
+                        # Подстрочный скан тела инлайн-скрипта на вызов sudo/su
+                        if re.search(r'\b(sudo|pkexec|doas)\b', sub_cmd):
+                            return True, 'Security policy violation: Privilege escalation inside interpreter payload is forbidden.'
+                        if re.search(r'\bsu\b', sub_cmd):
+                            return True, 'Security policy violation: User switching ("su") inside interpreter payload is forbidden.'
+                        # Рекурсивный прогон
                         sub_res, sub_reason = check_privilege_escalation(sub_cmd, depth + 1)
                         if sub_res:
                             return True, sub_reason
                 idx += 1
             continue
 
-        # Если обычная команда — пропускаем её аргументы до следующего разделителя
         idx += 1
         while idx < num_tokens and tokens[idx] not in COMMAND_DELIMITERS:
-            # Проверяем наличие подозрительных subshell $() внутри аргументов
             if '$(' in tokens[idx] or '`' in tokens[idx]:
                 subshell_match = re.search(r'\$\((.*?)\)|`(.*?)`', tokens[idx])
                 if subshell_match:
