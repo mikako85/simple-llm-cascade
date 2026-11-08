@@ -65,12 +65,12 @@ class ConfigWizard:
             try:
                 with open(self.config_path, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f)
-                settings_block = data.get('settings')
-                self.default_route = settings_block.get('default_route', '')
-
-                for k, v in settings_block.items():
-                    if k != 'default_route':
-                        self.settings[k] = v
+                settings_block = data.get('settings') or {}
+                if isinstance(settings_block, dict):
+                    self.default_route = settings_block.get('default_route', '')
+                    for k, v in self.settings.items():
+                        if k != 'default_route':
+                            self.settings[k] = v
 
                 self.models = data.get('models', [])
                 self.fallbacks = data.get('fallbacks', [])
@@ -410,7 +410,7 @@ class ConfigWizard:
                 'default_route': self.default_route,
                 'temperature': self.settings.get('temperature', 0.7),
                 'max_tool_iterations': self.settings.get('max_tool_iterations', 30),
-                'keep_recent_tool_outputs': self.settings.get('keep_recent_tool_outputs', 3),
+                'keep_recent_tool_outputs': self.settings.get('keep_recent_tool_outputs', 20),
                 'tool_stub_preserve_chars': self.settings.get('tool_stub_preserve_chars', 150),
                 'execution_mode': self.settings.get('execution_mode', 'ask'),
             },

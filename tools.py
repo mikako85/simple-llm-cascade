@@ -34,7 +34,7 @@ def set_execution_mode(mode: ExecutionMode) -> None:
     current_execution_mode = mode
     if mode == ExecutionMode.SANDBOX:
         active_runner = _sandbox_runner
-    elif mode == ExecutionMode.YOLO:
+    elif mode == (ExecutionMode.YOLO, ExecutionMode.ASK):
         active_runner = _host_runner
 
 

@@ -5,7 +5,7 @@ from typing import Any
 
 def prune_tool_message(
     messages: list[dict[str, Any]],
-    keep_last_n: int = 3,
+    keep_last_n: int = 20,
     preserve_chars: int = 1500,
     max_total_chars: int = 120000,
 ) -> list[dict[str, Any]]:

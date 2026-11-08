@@ -38,6 +38,8 @@ class MemoryManager:
             with open(GLOBAL_PROMPT_FILE, 'w', encoding='utf-8') as f:
                 f.write(DEFAULT_MEMORY_TEMPLATE)
 
+        self.current_session_file = None
+
 
     def load_global_memory(self) -> str:
         """Read the long-term memory from SYSTEM_PROMPT.md.
@@ -135,7 +137,7 @@ class MemoryManager:
         full_path = os.path.join(SESSIONS_DIR, session_name)
         if os.path.exists(full_path):
             os.remove(full_path)
-            if self.current_session_file == full_path:
+            if getattr(self, 'current_session_file', None) == full_path:
                 self.current_session_file = None
             return True
         return False

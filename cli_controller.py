@@ -429,6 +429,8 @@ def parse_cli_args() -> str | None:
         return 'ask'
     elif args.sandbox:
         return 'sandbox'
+    elif args.mode:
+        return args.mode
     else:
         return None
     

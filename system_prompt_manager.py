@@ -7,6 +7,7 @@ The file is injected into the system message on the next agent start.
 import os
 import subprocess
 from pathlib import Path
+from app_paths import GLOBAL_PROMPT_FILE
 
 
 def _edit_system_prompt_interactive():
@@ -19,7 +20,7 @@ def _edit_system_prompt_interactive():
     Returns:
         None
     """
-    prompt_path = Path('memory/SYSTEM_PROMPT.md')
+    prompt_path = GLOBAL_PROMPT_FILE
 
     prompt_path.parent.mkdir(parents=True, exist_ok=True)
 

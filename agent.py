@@ -7,7 +7,10 @@ loops until it produces a final answer or the iteration limit is reached.
 """
 
 import json
-import readline  # noqa: F401 - enables input history in the interactive CLI
+try:
+    import readline  # noqa: F401 - enables input history in the interactive CLI
+except ImportError:
+    pass
 import sys
 
 import litellm
@@ -242,12 +245,20 @@ class ChatAgent:
         importlib.reload(config)
 
         self.primary_model = config.ROUTER_PRIMARY_ROUTE
+
+        fallback_logger = _FallbackNoticeLogger(config.app_config.fallbacks)
+
+        callbacks = [cb for cb in (getattr(litellm, "callbacks", None) or []) if not isinstance(cb, _FallbackNoticeLogger)]
+        callbacks.append(fallback_logger)
+        litellm.callbacks = callbacks
         self.router = Router(
             model_list=config.build_router_model_list(),
             fallbacks=config.ROUTER_FALLBACKS,
             set_verbose=False,
             num_retries=0,
         )
+        if self.messages and self.messages[0].get('role') == 'system':
+            self.messages[0]['content'] = self.build_system_prompt()
 
 
     def chat(self, user_input: str) -> None:
@@ -289,81 +300,76 @@ class ChatAgent:
                 keep_last_n=config.KEEP_RECENT_TOOL_OUTPUTS,
                 preserve_chars=config.TOOL_STUBS
             )
+            try:
+                stream = self.router.completion(
+                    model=self.primary_model,
+                    messages=messages_for_api,
+                    tools=TOOLS_SCHEMAS,
+                    tool_choice="auto",
+                    temperature=config.TEMPERATURE,
+                    stream=True,
+                )
 
-            # The Router already knows the fallback chains; passing them again
-            # here would duplicate the configuration.
-            # print("\n--- ДИАГНОСТИКА СТРУКТУРЫ ДИАЛОГА ---")
-            # for idx, m in enumerate(messages_for_api):
-            #     role = m.get('role')
-            #     has_tools = bool(m.get('tool_calls'))
-            #     tool_id = m.get('tool_call_id')
-            #     print(f"[{idx}] Role: {role} | has_tool_calls: {has_tools} | tool_call_id: {tool_id}")
-            # print("------------------------------------\n")
-            stream = self.router.completion(
-                model=self.primary_model,
-                messages=messages_for_api,
-                tools=TOOLS_SCHEMAS,
-                tool_choice="auto",
-                temperature=config.TEMPERATURE,
-                stream=True,
-            )
-
-            full_response = ""
-            tool_calls_buffer: dict[int, dict[str, str]] = {}
-            printed_response_prefix = False
+                full_response = ""
+                tool_calls_buffer: dict[int, dict[str, str]] = {}
+                printed_response_prefix = False
 
             # Stream the answer, but only read fields that a chunk actually
             # carries: some providers send final chunks without choices.
-            for chunk in stream:
-                choices = getattr(chunk, "choices", None)
-                if not choices:
-                    continue
+                for chunk in stream:
+                    choices = getattr(chunk, "choices", None)
+                    if not choices:
+                        continue
 
-                delta = getattr(choices[0], "delta", None)
-                if delta is None:
-                    continue
+                    delta = getattr(choices[0], "delta", None)
+                    if delta is None:
+                        continue
 
-                content = getattr(delta, "content", None)
-                if isinstance(content, str) and content:
-                    if not printed_response_prefix:
-                        print("AI: ", end="", flush=True)
-                        printed_response_prefix = True
-                    print(content, end="", flush=True)
-                    full_response += content
+                    content = getattr(delta, "content", None)
+                    if isinstance(content, str) and content:
+                        if not printed_response_prefix:
+                            print("AI: ", end="", flush=True)
+                            printed_response_prefix = True
+                        print(content, end="", flush=True)
+                        full_response += content
 
-                delta_tool_calls = getattr(delta, "tool_calls", None)
-                if not delta_tool_calls:
-                    continue
+                    delta_tool_calls = getattr(delta, "tool_calls", None)
+                    if not delta_tool_calls:
+                        continue
 
-                for tool_chunk in delta_tool_calls:
-                    index = getattr(tool_chunk, "index", 0)
-                    if index is None:
-                        index = 0
+                    for tool_chunk in delta_tool_calls:
+                        index = getattr(tool_chunk, "index", 0) or 0
+                        if index not in tool_calls_buffer:
+                            tool_calls_buffer[index] = {
+                                "id": "",
+                                "name": "",
+                                "arguments": "",
+                            }
 
-                    if index not in tool_calls_buffer:
-                        tool_calls_buffer[index] = {
-                            "id": "",
-                            "name": "",
-                            "arguments": "",
-                        }
+                        tool_data = tool_calls_buffer[index]
 
-                    tool_data = tool_calls_buffer[index]
-                    call_id = getattr(tool_chunk, "id", None)
-                    if call_id:
-                        tool_data["id"] += call_id
+                        call_id = getattr(tool_chunk, "id", None)
+                        if call_id and not tool_data["id"]:
+                            tool_data["id"] = call_id
 
-                    function_delta = getattr(tool_chunk, "function", None)
-                    if function_delta is not None:
-                        function_name = getattr(function_delta, "name", None)
-                        if function_name:
-                            tool_data["name"] += function_name
+                        function_delta = getattr(tool_chunk, "function", None)
+                        if function_delta is not None:
+                            function_name = getattr(function_delta, "name", None)
+                            if function_name:
+                                tool_data["name"] += function_name
 
-                        arguments = getattr(function_delta, "arguments", None)
-                        if isinstance(arguments, str):
-                            tool_data["arguments"] += arguments
+                            arguments = getattr(function_delta, "arguments", None)
+                            if isinstance(arguments, str):
+                                tool_data["arguments"] += arguments
 
-            if printed_response_prefix:
-                print()
+                if printed_response_prefix:
+                    print()
+
+            except Exception as e:
+                if self.messages and self.messages[-1].get('role') == 'user':
+                    self.messages.pop()
+                print(f"\n\033[1;31m[ROUTER ERROR]\033[0m All models failed or connection broke: {e}")
+                return
 
             if tool_calls_buffer:
                 formatted_tool_calls = []
