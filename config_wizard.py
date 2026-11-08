@@ -411,7 +411,7 @@ class ConfigWizard:
                 'temperature': self.settings.get('temperature', 0.7),
                 'max_tool_iterations': self.settings.get('max_tool_iterations', 30),
                 'keep_recent_tool_outputs': self.settings.get('keep_recent_tool_outputs', 20),
-                'tool_stub_preserve_chars': self.settings.get('tool_stub_preserve_chars', 150),
+                'tool_stub_preserve_chars': self.settings.get('tool_stub_preserve_chars', 1500),
                 'execution_mode': self.settings.get('execution_mode', 'ask'),
             },
             'models': self.models,

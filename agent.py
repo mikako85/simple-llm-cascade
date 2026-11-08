@@ -172,7 +172,7 @@ class ChatAgent:
 
         self.memory = MemoryManager()
         self.context = ProjectContext()
-        global_memory = self.memory.load_global_memory()
+        
 
         self.available_tools = {
             "get_current_directory": get_current_directory,
@@ -356,7 +356,7 @@ class ChatAgent:
                         if function_delta is not None:
                             function_name = getattr(function_delta, "name", None)
                             if function_name:
-                                tool_data["name"] += function_name
+                                tool_data["name"] = function_name
 
                             arguments = getattr(function_delta, "arguments", None)
                             if isinstance(arguments, str):
