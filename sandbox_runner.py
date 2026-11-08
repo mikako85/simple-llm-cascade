@@ -221,6 +221,8 @@ class SandboxRunner(BaseCommandRunner):
             'firejail',
             '--net=none',
             '--quiet',
+            '--no-new-privs',
+            '--private-tmp',
             f'--private={self.project_dir}',
             '--read-only=/',
             f'--read-write={self.project_dir}',

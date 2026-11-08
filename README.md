@@ -31,7 +31,7 @@ If your primary model hits rate limits (HTTP 429), server downtime (HTTP 500), o
 - **Resilient Model Cascades**: Define primary routes and ordered fallback chains powered by LiteLLM Router.
 - **Three Autonomy & Security Modes**: Choose between strict interactive review (`ASK`), isolated containerization (`SANDBOX`), or full host autonomy (`YOLO`).
 - **Interactive Diff Inspection**: Real-time unified color diffs displayed before any file is created, modified, or overwritten.
-- **Privilege Escalation Protection**: Native prevention against `sudo`, `su`, `doas`, or access to sensitive OS directories (`/etc`, `/boot`, `.git`).
+- **Privilege Escalation Protection**: Heuristic privilege escalation check for common commands. In ASK mode, the true security boundary is human review of the command. In SANDBOX mode, security is enforced at the kernel level via Firejail (--read-only=/, --no-new-privs). In YOLO mode, bash has unconfined host access.
 - **Built-in Web Scraping & Research**: Search DuckDuckGo and extract clean Markdown from JavaScript-heavy documentation via Crawl4AI (with auto-provisioned headless Chromium).
 - **Smart Context Pruning**: Automatically truncates older tool executions to prevent token overflow while preserving recent outputs.
 - **Multi-file Context Attachment**: Pre-load project files directly into model context using `/add` and inspect with `/files`.
