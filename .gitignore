@@ -25,5 +25,7 @@ models.yaml.bak
 
 memory/sessions*.jsonl
 
+*.txt
+
 
 

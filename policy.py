@@ -14,6 +14,27 @@ from pathlib import Path
 
 from env_utils import is_firejail_available
 
+FORBIDDEN_ROOT_COMMANDS = {'sudo', 'pkexec', 'doas'}
+FORBIDDEN_INTERPRETERS = {'sh', 'bash', 'zsh', 'dash', 'ksh', 'python', 'python3', 'perl', 'ruby'}
+
+COMMAND_WRAPPERS = {
+    'env', 'time', 'exec', 'xargs', 'command',
+    'builtin', 'nice', 'timeout', 'strace', 'nohup', 'ltrace', 'eval'
+}
+
+COMMAND_DELIMITERS = {';', '&&', '||', '|', '&', '\n', '`', '$(', '(', ')', '{', '}'}
+
+SENSITIVE_PATH_PATTERNS = [
+    r'~/\.simple-llm-cascade',
+    r'/\.simple-llm-cascade',
+    r'~/\.ssh',
+    r'~/\.aws',
+    r'~/\.gnupg',
+    r'/etc/shadow',
+    r'/etc/sudoers',
+    r'(?:^|[\s/])\.env(?:\.[\w-]+)?(?:\s|$)', # Любые .env файлы
+]
+
 
 class ExecutionMode(str, Enum):
     """Execution modes governing agent autonomy and isolation."""
@@ -54,73 +75,134 @@ COMMAND_WRAPPERS = {'env', 'time', 'nohup', 'exec', 'xargs'}
 
 COMMAND_DELIMITERS = {';', '&&', '||', '|', '&', '\n', '`', '$(', '(', ')'}
 
-def check_privilege_escalation(command: str) -> tuple[bool, str]:
-    """Inspect a bash command line for privilege escalation attempts.
-
-    Correctly handles command chains (&&, ||, ;, |), wrappers (env, nohup),
-    env vars (VAR=val sudo), absolute paths (/usr/bin/sudo), while ignoring
-    arguments and commit messages.
-
-    Args:
-        command: Raw bash command string.
-
-    Returns:
-        tuple[bool, str]: (is_forbidden, rejection_reason)
+def check_privilege_escalation(command: str, depth: int = 0) -> tuple[bool, str]:
+    """Inspect bash command line for privilege escalation and secret exfiltration.
+    
+    Performs recursive AST-like inspection of command strings, subshells,
+    wrapper commands, interpreter payloads (-c), and find -exec clauses.
     """
     if not command or not command.strip():
         return False, ''
+
+    if depth > 5:  # Защита от бесконечной рекурсии
+        return True, 'Security violation: Command nesting depth exceeded limit.'
+
+    # 1. Защита от утечки секретов через bash (cat .env, cat ~/.ssh/...)
+    for pattern in SENSITIVE_PATH_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return (
+                True,
+                'Security policy violation: Direct command-line access to sensitive secret storage/credentials is strictly forbidden.'
+            )
+
+    # 2. Блокировка опасных пайпов в шелл (echo c3Vkbw== | base64 -d | sh, curl | bash)
+    if re.search(r'\|\s*(?:ba|da|z)?sh\b', command):
+        return (
+            True,
+            'Security policy violation: Piping dynamic output directly into a shell interpreter is strictly prohibited.'
+        )
+
+    # 3. Быстрая regex-проверка подозрительных конструкций
+    raw_forbidden_check = re.search(r'(?:^|[;&|`\n\(\)\{]|\$\()\s*(sudo|doas|pkexec|su)(?:\s+|$)', command)
+    if raw_forbidden_check:
+        forbidden_bin = raw_forbidden_check.group(1)
+        reason = f'Privilege escalation ("{forbidden_bin}")' if forbidden_bin != 'su' else 'Switching users ("su")'
+        return True, f'Security policy violation: {reason} is strictly forbidden.'
 
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
         lexer.whitespace_split = True
         lexer.commenters = ''
         tokens = list(lexer)
-        is_cmd_start = True
-
-        for token in tokens:
-            if is_cmd_start:
-                # 1. Skip environment variable assignments (e.g. VAR=val sudo ...)
-                if '=' in token and not token.startswith('='):
-                    continue
-
-                # 2. Extract base executable name (handles /usr/bin/sudo -> sudo)
-                cmd_name = token.strip().split('/')[-1]
-
-                # 3. Check for privilege escalation binaries
-                if cmd_name in FORBIDDEN_ROOT_COMMANDS:
-                    return (
-                        True,
-                        f'Security policy violation: Privilege escalation ("{cmd_name}") is strictly forbidden.'
-                    )
-                if cmd_name == 'su':
-                    return (
-                        True,
-                        'Security policy violation: Switching user accounts ("su") is strictly forbidden.'
-                    )
-
-                # 4. If it's a wrapper like 'env' or 'nohup', the next token is still a command
-                if cmd_name in COMMAND_WRAPPERS:
-                    continue
-
-                # Normal command recognized (e.g. echo, git, npm) -> next tokens are arguments
-                is_cmd_start = False
-
-            elif token in COMMAND_DELIMITERS or any(sep in token for sep in (';', '&&', '||', '|')):
-                is_cmd_start = True
-
     except Exception:
-        # Fallback to regex pattern supporting env assignments: VAR=val sudo ...
-        pattern = r'(?:^|[;&|`\n]\s*|&&|\|\|)(?:\s*[\w]+=\S+)*\s*(?:[/\w.-]+/)?(sudo|doas|pkexec|su)(?:\s+|$)'
-        match = re.search(pattern, command)
-        if match:
-            forbidden_bin = match.group(1)
-            return (
-                True,
-                f'Security policy violation: Privilege escalation ("{forbidden_bin}") is strictly forbidden.'
-            )
+        # Если shlex упал на незакрытых кавычках, блокируем небезопасную строку
+        return True, 'Security policy violation: Malformed command string or unclosed quotes.'
+
+    idx = 0
+    num_tokens = len(tokens)
+
+    while idx < num_tokens:
+        token = tokens[idx]
+
+        # Разделители команд: следующий токен снова будет началом команды
+        if token in COMMAND_DELIMITERS or any(sep in token for sep in (';', '&&', '||', '|', '(', ')', '{', '}')):
+            idx += 1
+            continue
+
+        # Пропуск переменных окружения (VAR=val cmd)
+        if '=' in token and not token.startswith('='):
+            idx += 1
+            continue
+
+        # Извлекаем чистое имя исполняемого файла (/usr/bin/sudo -> sudo)
+        cmd_name = token.strip().split('/')[-1]
+
+        # Проверка привилегированных бинарников
+        if cmd_name in FORBIDDEN_ROOT_COMMANDS:
+            return True, f'Security policy violation: Privilege escalation ("{cmd_name}") is strictly forbidden.'
+        if cmd_name == 'su':
+            return True, 'Security policy violation: Switching user accounts ("su") is strictly forbidden.'
+
+        # Пропуск обёрток (env, nice, timeout, xargs, command и т.д.) и их флагов
+        if cmd_name in COMMAND_WRAPPERS:
+            idx += 1
+            while idx < num_tokens:
+                sub_token = tokens[idx]
+                # Пропускаем флаги оберток (например -i, -u, -n, -v) и присваивания VAR=val
+                if sub_token.startswith('-') or ('=' in sub_token and not sub_token.startswith('=')):
+                    idx += 1
+                    continue
+                # Нашли саму запускаемую команду
+                break
+            continue
+
+        # Проверка find ... -exec cmd {} \;
+        if cmd_name == 'find':
+            # Ищем конструкцию -exec или -execdir
+            exec_indices = [i for i, t in enumerate(tokens[idx:], start=idx) if t in ('-exec', '-execdir')]
+            for e_idx in exec_indices:
+                if e_idx + 1 < num_tokens:
+                    # Рекурсивно проверяем команду после -exec
+                    sub_cmd_tokens = []
+                    for t in tokens[e_idx + 1:]:
+                        if t in (';', '\\;', '+'):
+                            break
+                        sub_cmd_tokens.append(t)
+                    sub_res, sub_reason = check_privilege_escalation(' '.join(sub_cmd_tokens), depth + 1)
+                    if sub_res:
+                        return True, sub_reason
+            idx += 1
+            continue
+
+        # Рекурсивный разбор для интерпретаторов с флагом -c (bash -c "...", python -c "...")
+        if cmd_name in FORBIDDEN_INTERPRETERS or cmd_name.startswith('python'):
+            idx += 1
+            while idx < num_tokens:
+                arg = tokens[idx]
+                if arg in ('-c', '-ic', '-c'):
+                    if idx + 1 < num_tokens:
+                        sub_cmd = tokens[idx + 1]
+                        # Проверяем полезную нагрузку внутри -c
+                        sub_res, sub_reason = check_privilege_escalation(sub_cmd, depth + 1)
+                        if sub_res:
+                            return True, sub_reason
+                idx += 1
+            continue
+
+        # Если обычная команда — пропускаем её аргументы до следующего разделителя
+        idx += 1
+        while idx < num_tokens and tokens[idx] not in COMMAND_DELIMITERS:
+            # Проверяем наличие подозрительных subshell $() внутри аргументов
+            if '$(' in tokens[idx] or '`' in tokens[idx]:
+                subshell_match = re.search(r'\$\((.*?)\)|`(.*?)`', tokens[idx])
+                if subshell_match:
+                    sub_payload = subshell_match.group(1) or subshell_match.group(2)
+                    sub_res, sub_reason = check_privilege_escalation(sub_payload, depth + 1)
+                    if sub_res:
+                        return True, sub_reason
+            idx += 1
 
     return False, ''
-
 
 def format_file_diff(file_path: str, new_content: str, max_diff_lines: int = 40) -> str:
     """Generate a colorized unified diff for terminal display."""
