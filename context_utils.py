@@ -11,7 +11,7 @@ def prune_tool_message(
 ) -> list[dict[str, Any]]:
     """Prune older tool execution outputs to prevent context overflow
 
-    Iterates throught the message history in reverse order. The most recent
+    Iterates through the message history in reverse order. The most recent
     'keep_last_n' tool messages are preserved intact. Any tool messages
     prior to that have their `content` truncated to a preview stub.
 
@@ -47,7 +47,7 @@ def prune_tool_message(
 
                 stub_marker = (
                     '\n... [Output truncated to save context]'
-                    'Tool execution was succesful and analyzed in prior turns'
+                    'Tool execution was successful and analyzed in prior turns'
                 )
 
                 min_threshold_to_prune = preserve_chars + len(stub_marker)

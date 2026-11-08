@@ -27,7 +27,7 @@ DEFAULT_MEMORY_TEMPLATE = (
 class MemoryManager:
     """Manage the global memory file and the saved dialogue sessions.
 
-    The manager creates the memory directory layout on initialisation and
+    The manager creates the memory directory layout on initialization and
     keeps track of the session file currently in use.
     """
 

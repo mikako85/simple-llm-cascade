@@ -18,7 +18,7 @@ class CommandResult:
     """Outcome of an executed command.
 
     Attributes:
-        returncode: Exit code of the command, (or -1 when the runner failure).
+        returncode: Exit code of the command (or -1 when the runner fails).
         stdout: Captured standard output, possibly truncated.
         stderr: Captured standard error.
         truncated: True when stdout exceeded the configured limit.
@@ -73,7 +73,7 @@ class BaseCommandRunner:
 
 
     def _execute(self, argv: list[str], env: dict | None = None) -> CommandResult:
-        """Execute a process with timeour, process-group isolation, and output truncation"""
+        """Execute a process with timeout, process-group isolation, and output truncation"""
         execution_env = env if env is not None else get_sanitized_env()
         try:
             process = subprocess.Popen(
@@ -128,7 +128,7 @@ class BaseCommandRunner:
 
 
     def _kill_process_group(self, process: subprocess.Popen) -> None:
-        """Kill the spawned process and itd entire process tree"""
+        """Kill the spawned process and its entire process tree"""
         try:
             pgid = os.getpgid(process.pid)
         except OSError:

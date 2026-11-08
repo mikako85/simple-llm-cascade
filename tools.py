@@ -190,7 +190,7 @@ def read_text_document(path: str, max_kb: int = 100) -> str:
 
 
 def write_file(path: str, content: str):
-    """Write or overwrite a tect file with the provided content.
+    """Write or overwrite a text file with the provided content.
 
     Automatically creates the parent directory if it does not exist.
 
@@ -218,7 +218,7 @@ def write_file(path: str, content: str):
         chars_count = len(content)
         action = 'overwritten' if is_overwrite else 'created'
         return (
-            f'File {path} succesfully {action} '
+            f'File {path} successfully {action} '
             f'{lines_count} lines and {chars_count} characters written'
         )
 
@@ -316,7 +316,7 @@ def fetch_url_markdown(url: str) -> str:
             result = await crawler.arun(url=url)
             if result.success:
                 raw_md = result.markdown.raw_markdown or ""
-                # НЕЙТРАЛИЗУЕМ ПОПЫТКУ ПОБЕГА ИЗ ТЕГА:
+                # Neutralize attempts to break out of the tag:
                 safe_md = raw_md.replace("</untrusted_external_webpage>", "[escaped_tag]")
                 return (
                     f"<untrusted_external_webpage url='{url}'>\n"
@@ -348,7 +348,7 @@ def _ensure_playwright_browser_installed() -> bool:
                 [sys.executable, '-m', 'playwright', 'install', 'chromium'],
                 check=True
             )
-            print('Chromium installed Succesfully!\n')
+            print('Chromium installed successfully!\n')
             return True
         except Exception as e:
             print(f'Chromium installation error: {e}\n')

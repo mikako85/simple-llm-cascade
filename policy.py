@@ -1,8 +1,8 @@
 """Security policies, execution modes, and tool interception logic.
 
 This module defines the agent's operation modes (SANDBOX, YOLO, ASK),
-verifies command safety(e.g. blocking privilege escalation), renders file diffs,
- and prompts the user for  confirmation when mutating actions are requested.
+verifies command safety (e.g. blocking privilege escalation), renders file diffs,
+and prompts the user for confirmation when mutating actions are requested.
 """
 
 import difflib
@@ -19,9 +19,9 @@ from env_utils import is_firejail_available
 class ExecutionMode(str, Enum):
     """Execution modes governing agent autonomy and isolation."""
 
-    SANDBOX = 'sandbox' # Isolated bash inside a Firejail sandbox(read-only root, no network access)
-    YOLO = 'yolo'       # Full autonomous host execution without confirmation
-    ASK = 'ask'         # Host execution with interactive user confirmation
+    SANDBOX = 'sandbox'  # Isolated bash inside a Firejail sandbox (read-only root, no network access)
+    YOLO = 'yolo'        # Full autonomous host execution without confirmation
+    ASK = 'ask'          # Host execution with interactive user confirmation
 
 
     @classmethod
@@ -37,10 +37,10 @@ class ExecutionMode(str, Enum):
 
 @dataclass(frozen=True)
 class InterceptResult:
-    """Outcome of tool call interception
+    """Outcome of a tool call interception.
 
     Attributes:
-        allowed:True if the tool execution is permitted, False if blocked/rejected.
+        allowed: True if the tool execution is permitted, False if blocked/rejected.
         rejection_reason: Explanation for rejection sent back to the LLM.
     """
 
@@ -78,7 +78,7 @@ def check_privilege_escalation(command: str, depth: int = 0) -> tuple[bool, str]
     if depth > 5:
         return True, 'Security violation: Command nesting depth exceeded limit.'
 
-    # 1. Защита от прямого доступа к файлам секретов в bash
+    # 1. Block direct access to secret files from bash
     for pattern in SENSITIVE_PATH_PATTERNS:
         if re.search(pattern, command, re.IGNORECASE):
             return (
@@ -86,14 +86,14 @@ def check_privilege_escalation(command: str, depth: int = 0) -> tuple[bool, str]
                 'Security policy violation: Direct command-line access to sensitive credentials or environment files is strictly forbidden.'
             )
 
-    # 2. Защита от пайпов в шелл (echo ... | sh, base64 | bash)
+    # 2. Block piping into a shell interpreter (echo ... | sh, base64 | bash)
     if re.search(r'\|\s*(?:ba|da|z)?sh\b', command):
         return (
             True,
             'Security policy violation: Piping dynamic output directly into a shell interpreter is strictly prohibited.'
         )
 
-    # 3. Базовая быстрая проверка запрещенных бинарников
+    # 3. Fast check for forbidden binaries
     raw_forbidden_check = re.search(r'(?:^|[;&|`\n\(\)\{]|\$\()\s*(sudo|doas|pkexec|su)(?:\s+|$)', command)
     if raw_forbidden_check:
         forbidden_bin = raw_forbidden_check.group(1)
@@ -124,7 +124,7 @@ def check_privilege_escalation(command: str, depth: int = 0) -> tuple[bool, str]
 
         cmd_name = token.strip().split('/')[-1]
 
-        # Блокировка динамической подстановки команд в позиции бинарника: $(echo sudo) id
+        # Block dynamic command substitution where the binary name is expected: $(echo sudo) id
         if cmd_name.startswith('$(') or cmd_name.startswith('`'):
             return True, 'Security policy violation: Dynamic command substitution in executable position is prohibited.'
 
@@ -133,32 +133,32 @@ def check_privilege_escalation(command: str, depth: int = 0) -> tuple[bool, str]
         if cmd_name == 'su':
             return True, 'Security policy violation: Switching user accounts ("su") is strictly forbidden.'
 
-        # Обработка оберток: пропускаем флаги и специфичные аргументы (таймауты, nice-уровни)
+        # Wrapper handling: skip flags and wrapper-specific arguments (timeouts, nice levels)
         if cmd_name in COMMAND_WRAPPERS:
             idx += 1
-            # eval: собирает всё остальное и рекурсивно исполняет как shell-команду
+            # eval: collects the remaining tokens and runs them recursively as a shell command
             if cmd_name == 'eval':
                 eval_payload = ' '.join(tokens[idx:])
                 return check_privilege_escalation(eval_payload, depth + 1)
 
             while idx < num_tokens:
                 sub_token = tokens[idx]
-                # Пропускаем флаги (-i, -n, -v и т.д.) и переменные (VAR=val)
+                # Skip flags (-i, -n, -v, etc.) and variable assignments (VAR=val)
                 if sub_token.startswith('-') or ('=' in sub_token and not sub_token.startswith('=')):
                     idx += 1
                     continue
-                # Для timeout пропускаем аргумент длительности (например 5, 10s, 1m)
+                # For timeout, skip the duration argument (e.g. 5, 10s, 1m)
                 if cmd_name == 'timeout' and re.match(r'^\d+(\.\d+)?[smhd]?$', sub_token):
                     idx += 1
                     continue
-                # Для nice пропускаем числовой приоритет
+                # For nice, skip the numeric priority
                 if cmd_name == 'nice' and re.match(r'^-?\d+$', sub_token):
                     idx += 1
                     continue
                 break
             continue
 
-        # Проверка find ... -exec cmd \;
+        # Inspect find ... -exec cmd \;
         if cmd_name == 'find':
             exec_indices = [i for i, t in enumerate(tokens[idx:], start=idx) if t in ('-exec', '-execdir')]
             for e_idx in exec_indices:
@@ -174,7 +174,7 @@ def check_privilege_escalation(command: str, depth: int = 0) -> tuple[bool, str]
             idx += 1
             continue
 
-        # Интерпретаторы (python, bash, sh, perl...) с флагом -c
+        # Interpreters (python, bash, sh, perl...) invoked with the -c flag
         if cmd_name in INSPECTED_INTERPRETERS or cmd_name.startswith('python'):
             idx += 1
             while idx < num_tokens and tokens[idx] not in COMMAND_DELIMITERS:
@@ -182,12 +182,12 @@ def check_privilege_escalation(command: str, depth: int = 0) -> tuple[bool, str]
                 if arg in ('-c', '-ic'):
                     if idx + 1 < num_tokens:
                         sub_cmd = tokens[idx + 1]
-                        # Подстрочный скан тела инлайн-скрипта на вызов sudo/su
+                        # Inline scan of the script payload for sudo/su invocations
                         if re.search(r'\b(sudo|pkexec|doas)\b', sub_cmd):
                             return True, 'Security policy violation: Privilege escalation inside interpreter payload is forbidden.'
                         if re.search(r'\bsu\b', sub_cmd):
                             return True, 'Security policy violation: User switching ("su") inside interpreter payload is forbidden.'
-                        # Рекурсивный прогон
+                        # Recurse into the payload
                         sub_res, sub_reason = check_privilege_escalation(sub_cmd, depth + 1)
                         if sub_res:
                             return True, sub_reason
@@ -213,7 +213,7 @@ def format_file_diff(file_path: str, new_content: str, max_diff_lines: int = 40)
     if not path.is_absolute():
         path = (Path.cwd() / path).resolve()
 
-    # Case : Brand new file
+    # Case 1: Brand new file
     if not path.exists():
         lines = new_content.splitlines()
         preview = lines[:8]
@@ -224,7 +224,7 @@ def format_file_diff(file_path: str, new_content: str, max_diff_lines: int = 40)
             f"{preview_text}{more}"
         )
 
-    # Case 2 : Overwrite existing file -> Unified diff
+    # Case 2: Overwrite existing file -> Unified diff
     try:
         old_content = path.read_text(encoding='utf-8', errors='replace')
     except Exception as e: 
@@ -268,7 +268,7 @@ def format_file_diff(file_path: str, new_content: str, max_diff_lines: int = 40)
 
 
 def prompt_user_for_confirmation(prompt_text: str = 'Apply this action? [y/N]') -> bool:
-    """Prompt the user for interactive confirmation i nthr terminal."""
+    """Prompt the user for interactive confirmation in the terminal."""
     try:
         answer = input(prompt_text).strip().lower()
         return answer in ('y', 'yes')
@@ -278,7 +278,7 @@ def prompt_user_for_confirmation(prompt_text: str = 'Apply this action? [y/N]') 
 
 
 class ToolInterceptor:
-    """Gateway that interxepts tool execution based on the active ExecurionMode."""
+    """Gateway that intercepts tool execution based on the active ExecutionMode."""
     def __init__(self, default_mode: ExecutionMode = ExecutionMode.ASK):
         self.mode = default_mode
 
@@ -294,7 +294,7 @@ class ToolInterceptor:
         tool_args: dict,
         current_mode: ExecutionMode | None = None,
     ) -> InterceptResult:
-        """Evaluate whether a tool call should be proceed
+        """Evaluate whether a tool call should proceed
         
         Args:
             tool_name: Name of the tool to be executed.

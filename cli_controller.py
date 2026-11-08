@@ -173,13 +173,13 @@ class AppCLIController:
                 print('╚' + '═' * box_width + '╝\n')
             return True
 
-        # --- КОМАНДА /mode ---
+        # --- /mode COMMAND ---
         if cmd_stripped == '/mode' or cmd_stripped.startswith('/mode '):
             parts = cmd_stripped.split(maxsplit=1)
             if len(parts) == 1:
                 current = self.agent.mode.value.upper()
 
-                # Честное и точное определение статуса окружения
+                # Accurate detection of the environment status
                 if is_wsl():
                     env_status = "WSL environment (Firejail unsupported)"
                 elif is_firejail_available():
@@ -198,7 +198,7 @@ class AppCLIController:
 
             target_mode = ExecutionMode(target_mode_str)
 
-            # Точная и информативная диагностика при попытке включить sandbox
+            # Precise, informative diagnostics when the user enables sandbox mode
             if target_mode == ExecutionMode.SANDBOX:
                 if is_wsl():
                     print("❌ Cannot switch to 'sandbox': Firejail is not supported inside WSL.")
@@ -209,7 +209,7 @@ class AppCLIController:
                     print("   Install it via your package manager (e.g. 'sudo apt install firejail') or use 'ask'/'yolo'.")
                     return True
 
-            # Переключаем режим агента на лету
+            # Switch the agent mode on the fly
             self.agent.set_mode(target_mode)
             print(f"✅ Execution mode successfully changed to: \033[1;32m{target_mode.value.upper()}\033[0m")
             return True
@@ -304,7 +304,7 @@ class SessionCLIController:
             user_input: Raw line typed by the user.
 
         Returns:
-            True when the command was recognised, False otherwise.
+            True when the command was recognized, False otherwise.
         """
         if not user_input.startswith('/'):
             return False
@@ -389,7 +389,7 @@ def parse_cli_args() -> str | None:
     """Parse command line flags for execution mode overrides
     
     Returns: 
-        str | None: Seelcted mode name or None if relying on models.yaml
+        str | None: Selected mode name, or None to rely on models.yaml
     """
 
     parser = argparse.ArgumentParser(

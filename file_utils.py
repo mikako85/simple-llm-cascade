@@ -67,7 +67,7 @@ class ProjectContext:
             file_path: Path to the file to attach.
 
         Returns:
-            Normalised path of the attached file.
+            Normalized path of the attached file.
 
         Raises:
             FileNotFoundError: If the path does not exist.

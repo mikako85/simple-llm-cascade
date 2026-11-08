@@ -2,7 +2,7 @@
 
 This module contains functions for detecting the current environment and
 platform, such as if the code is running in a inside Windows Subsystem for Linux,
-MACos or Linux and verifies sandbox tool availability (e.g. Firejail)
+macOS or Linux and verifies sandbox tool availability (e.g. Firejail)
     
 """
 

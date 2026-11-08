@@ -133,7 +133,7 @@ class ChatAgent:
     """
 
     def __init__(self, model_name: str | None = None, mode: ExecutionMode | str | None = None):
-        """Create the router, register the fallback logger, load memory and security police.
+        """Create the router, register the fallback logger, load memory and security policy.
 
         Args:
             model_name: Primary route to use. Defaults to the route from
@@ -199,7 +199,7 @@ class ChatAgent:
         global_memory = self.memory.load_global_memory()
         mode_desc = {
             ExecutionMode.SANDBOX: 'SANDBOX (bash runs in isolated Firejail, file operations locked to workspace)',
-            ExecutionMode.ASK: 'ASK (runs on host; file mofifications and bash commands require interactive user approval)',
+            ExecutionMode.ASK: 'ASK (runs on host; file modifications and bash commands require interactive user approval)',
             ExecutionMode.YOLO: 'YOLO (runs autonomously on host without confirmation prompts '
         }.get(self.mode, 'Standard')
 

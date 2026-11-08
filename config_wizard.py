@@ -381,7 +381,7 @@ class ConfigWizard:
         idx = int(choice) - 1
         if 0 <= idx < len(self.models):
             self.default_route = self.models[idx]['model_name']
-            print(f'Active model changed to "{self.default_route}" succesfully')
+            print(f'Active model changed to "{self.default_route}" successfully')
         else:
             print('Wrong model number')
 
