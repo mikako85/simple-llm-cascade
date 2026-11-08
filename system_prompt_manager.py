@@ -6,7 +6,6 @@ The file is injected into the system message on the next agent start.
 
 import os
 import subprocess
-from pathlib import Path
 from app_paths import GLOBAL_PROMPT_FILE
 
 
