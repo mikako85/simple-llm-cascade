@@ -7,8 +7,12 @@
 [![Powered by LiteLLM](https://img.shields.io/badge/Router-LiteLLM-purple.svg)](https://github.com/BerriAI/litellm)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-<!-- СЮДА ВСТАВЛЯЕТСЯ ГЛАВНЫЙ СКРИНШОТ ИЛИ ГИФКА -->
-<img src="assets/preview.png" alt="Simple LLM Cascade Demo" width="900"/>
+
+
+
+https://github.com/user-attachments/assets/68fc51dd-5c76-4e80-99f7-9559e03c14b3
+
+
 
 </div>
 
