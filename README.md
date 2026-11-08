@@ -186,8 +186,10 @@ Inside the chat prompt, manage the agent state and workspace using slash command
 
 Cascade uses a **hierarchical cascade resolution strategy**:
 
-1. **Local Workspace Override**: If a `models.yaml` file exists in the directory where you run `cascade`, it takes immediate priority. This allows teams to check in project-specific model rules or separate billing keys per project.
-2. **Global User Profile**: If no local `models.yaml` is found, Cascade falls back to `~/.simple-llm-cascade/models.yaml` and loads API keys from `~/.simple-llm-cascade/.env`.
+Cascade utilizes a **single, centralized configuration architecture** stored in your user profile:
+* **Models & Settings**: `~/.simple-llm-cascade/models.yaml`
+* **API Credentials**: `~/.simple-llm-cascade/.env`
+* **Memory & Sessions**: `~/.simple-llm-cascade/memory/`
 
 ### Sample `models.yaml`
 
