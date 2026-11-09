@@ -270,7 +270,7 @@ def format_file_diff(file_path: str, new_content: str, max_diff_lines: int = 40)
 def prompt_user_for_confirmation(prompt_text: str = 'Apply this action? [y/N]') -> bool:
     """Prompt the user for interactive confirmation in the terminal."""
     try:
-        answer = input(prompt_text).strip().lower()
+        answer = prompt(prompt_text).strip().lower()
         return answer in ('y', 'yes')
     except (EOFError, KeyboardInterrupt):
         print()

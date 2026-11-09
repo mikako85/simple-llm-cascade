@@ -7,14 +7,7 @@
 [![Powered by LiteLLM](https://img.shields.io/badge/Router-LiteLLM-purple.svg)](https://github.com/BerriAI/litellm)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-
-
-
 https://github.com/user-attachments/assets/68fc51dd-5c76-4e80-99f7-9559e03c14b3
-
-
-
-</div>
 
 ---
 
@@ -32,7 +25,7 @@ If your primary model hits rate limits (HTTP 429), server downtime (HTTP 500), o
 - **Three Autonomy & Security Modes**: Choose between strict interactive review (`ASK`), isolated containerization (`SANDBOX`), or full host autonomy (`YOLO`).
 - **Interactive Diff Inspection**: Real-time unified color diffs displayed before any file is created, modified, or overwritten.
 - **Privilege Escalation Protection**: Command-line privilege escalation heuristics, sensitive path guards (blocking `.env`, `~/.ssh`, `~/.aws`), and Firejail sandbox isolation in `SANDBOX` mode. In `ASK` mode, actions require interactive human approval; in `YOLO` mode, bash operates with autonomous host permissions.
-- **Built-in Web Scraping & Research**: Search Google/DuckDuckGo and extract clean Markdown from JavaScript-heavy documentation via Crawl4AI (with auto-provisioned headless Chromium).
+- **Built-in Web Scraping & Research**: Search DuckDuckGo and extract clean Markdown from JavaScript-heavy documentation via Crawl4AI (with auto-provisioned headless Chromium).
 - **Smart Context Pruning**: Automatically truncates older tool executions to prevent token overflow while preserving recent outputs.
 - **Multi-file Context Attachment**: Pre-load project files directly into model context using `/add` and inspect with `/files`.
 
@@ -81,28 +74,6 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # 2. Install Cascade globally
 uv tool install git+https://github.com/mikako85/simple-llm-cascade.git
-
-### Option 2: Using pipx
-
-
-
-| `fetch_url_markdown` | Downloads full web pages and extracts clean Markdown via Crawl4AI. | Automatically provisions headless Chromium if missing. Executes JS rendering. |
-| `get_current_directory` | Resolves host/sandbox working directory context. | Read-only state inspection. |
-| `get_system_time` | Provides host date and time for temporal reasoning. | Read-only state inspection. |
-
----
-
-## Installation
-
-### Option 1: Using `uv` (Recommended — Fast & Isolated)
-
-No pre-installed Python required:
-```bash
-# 1. Install uv if you don't have it
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 2. Install Cascade globally
-uv tool install git+https://github.com/mikako85/simple-llm-cascade.git
 ```
 
 ### Option 2: Using `pipx`
@@ -126,7 +97,7 @@ uv pip install -e .
 
 ---
 
- Quick Start
+## Quick Start
 
 1. **Launch Cascade inside any repository or workspace folder:**
    ```bash
@@ -161,7 +132,7 @@ uv pip install -e .
 
 ---
 
-##  Slash Commands & Navigation
+## Slash Commands & Navigation
 
 Inside the chat prompt, manage the agent state and workspace using slash commands:
 
@@ -188,11 +159,9 @@ Inside the chat prompt, manage the agent state and workspace using slash command
 
 ## Configuration Architecture
 
-Cascade uses a **hierarchical cascade resolution strategy**:
-
 Cascade utilizes a **single, centralized configuration architecture** stored in your user profile:
 * **Models & Settings**: `~/.simple-llm-cascade/models.yaml`
-* **API Credentials**: `~/.simple-llm-cascade/.env`
+* **API Credentials**: `~/.simple-llm-cascade/.env` (protected with `chmod 600`)
 * **Memory & Sessions**: `~/.simple-llm-cascade/memory/`
 
 ### Sample `models.yaml`
@@ -201,9 +170,9 @@ Cascade utilizes a **single, centralized configuration architecture** stored in 
 settings:
   default_route: deepseek
   temperature: 0.7
-  max_tool_iterations: 15
-  keep_recent_tool_outputs: 3
-  tool_stub_preserve_chars: 150
+  max_tool_iterations: 30
+  keep_recent_tool_outputs: 20
+  tool_stub_preserve_chars: 1500
   execution_mode: ask
 
 models:
@@ -255,10 +224,8 @@ cascade -m sandbox
 ## Context Management & Token Optimization
 
 To prevent conversation context overflow during long autonomous sessions:
-* **Tool Message Pruning**: Cascade automatically keeps the last `keep_recent_tool_outputs` (default: `3`) tool outputs intact. Older tool results are safely truncated to compact preview stubs (`tool_stub_preserve_chars: 150`) while retaining standard API `tool_call_id` mapping.
+* **Tool Message Pruning**: Cascade automatically keeps the last `keep_recent_tool_outputs` (default: `20`) tool outputs intact. Older tool results are safely truncated to compact preview stubs (`tool_stub_preserve_chars: 1500`) while retaining standard API `tool_call_id` mapping.
 * **Firejail Path Mapping**: In `SANDBOX` mode, host project paths are transparently mapped to the virtual sandbox root so paths copied by the LLM always resolve properly.
-
-
 
 ---
 

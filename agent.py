@@ -200,7 +200,7 @@ class ChatAgent:
         mode_desc = {
             ExecutionMode.SANDBOX: 'SANDBOX (bash runs in isolated Firejail, file operations locked to workspace)',
             ExecutionMode.ASK: 'ASK (runs on host; file modifications and bash commands require interactive user approval)',
-            ExecutionMode.YOLO: 'YOLO (runs autonomously on host without confirmation prompts '
+            ExecutionMode.YOLO: 'YOLO (runs autonomously on host without confirmation prompts)'
         }.get(self.mode, 'Standard')
 
         return (
