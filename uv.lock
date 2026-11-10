@@ -1383,11 +1383,12 @@ wheels = [
 
 [[package]]
 name = "litellm"
-version = "1.65.0"
+version = "1.81.13"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "click" },
+    { name = "fastuuid" },
     { name = "httpx" },
     { name = "importlib-metadata" },
     { name = "jinja2" },
@@ -1398,9 +1399,9 @@ dependencies = [
     { name = "tiktoken" },
     { name = "tokenizers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/08/43/57e2efee4fc7e46d2c8e98e221158b0d9720237fd9d1d5dbff69c58c9037/litellm-1.65.0.tar.gz", hash = "sha256:147a74d18601ccaaff3ca125eba914ab6e5b5854aff480dce5a52be5b9d52ff8", size = 6679690, upload-time = "2025-03-28T21:03:55.829Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/72/80/b6cb799e7100953d848e106d0575db34c75bc3b57f31f2eefdfb1e23655f/litellm-1.81.13.tar.gz", hash = "sha256:083788d9c94e3371ff1c42e40e0e8198c497772643292a65b1bc91a3b3b537ea", size = 16562861, upload-time = "2026-02-17T02:00:47.466Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e2/48/6985411f5fcb561c5da9ffef95fb71bb31e9ea812bdcb06d451f9c1727f5/litellm-1.65.0-py3-none-any.whl", hash = "sha256:bbc211f3d03e1830ed7f4304b40f70fa1fa4a2f9109d006ede5f78e83a189aba", size = 7012224, upload-time = "2025-03-28T21:03:53.313Z" },
+    { url = "https://files.pythonhosted.org/packages/be/f3/fffb7932870163cea7addc392165647a9a8a5489967de486c854226f1141/litellm-1.81.13-py3-none-any.whl", hash = "sha256:ae4aea2a55e85993f5f6dd36d036519422d24812a1a3e8540d9e987f2d7a4304", size = 14587505, upload-time = "2026-02-17T02:00:44.22Z" },
 ]
 
 [[package]]
@@ -3054,7 +3055,7 @@ requires-dist = [
     { name = "crawl4ai", specifier = ">=0.4.0" },
     { name = "ddgs", specifier = ">=7.0.0" },
     { name = "groq", specifier = ">=0.4.0" },
-    { name = "litellm", specifier = ">=1.58.0,<=1.65.0" },
+    { name = "litellm", specifier = "==1.81.13" },
     { name = "mcp", specifier = ">=1.0.0" },
     { name = "mistralai", specifier = ">=0.1.0" },
     { name = "openai", specifier = ">=1.0.0" },
