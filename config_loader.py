@@ -22,13 +22,18 @@ class SettingsConfig(BaseModel):
         default_route: Route used as the primary model.
         temperature: Sampling temperature between 0 and 1.
         max_tool_iterations: Upper bound of tool-calling rounds per request.
+        max_iteration_extensions: How many times the exhausted budget may be
+            extended (silently in YOLO, after confirmation otherwise).
         keep_recent_tool_outputs: Number of recent tool outputs to keep unpruned.
         tool_stub_preserve_chars: Number of characters to preserve in tool stubs.
     """
 
     default_route: str = Field(..., description='logic route by default')
     temperature: float = Field(0.7, ge=0.0, le=1.0, description='temperature of generation')
-    max_tool_iterations: int = Field(30, ge=0, description='max tool iterations')
+    max_tool_iterations: int = Field(
+        30, ge=1, le=500, description='max tool iterations per round')
+    max_iteration_extensions: int = Field(
+        5, ge=0, le=100, description='max number of iteration budget extensions')
     keep_recent_tool_outputs: int = Field(
         20, ge=1, description='number of recent tool outputs to keep unpruned')
     tool_stub_preserve_chars: int = Field(

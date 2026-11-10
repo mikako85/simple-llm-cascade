@@ -44,6 +44,7 @@ class ConfigWizard:
         self.settings: dict = {
             'temperature': 0.7,
             'max_tool_iterations': 30,
+            'max_iteration_extensions': 5,
             'keep_recent_tool_outputs': 20,
             'tool_stub_preserve_chars': 1500,
             'execution_mode': 'ask',
@@ -410,6 +411,7 @@ class ConfigWizard:
                 'default_route': self.default_route,
                 'temperature': self.settings.get('temperature', 0.7),
                 'max_tool_iterations': self.settings.get('max_tool_iterations', 30),
+                'max_iteration_extensions': self.settings.get('max_iteration_extensions', 5),
                 'keep_recent_tool_outputs': self.settings.get('keep_recent_tool_outputs', 20),
                 'tool_stub_preserve_chars': self.settings.get('tool_stub_preserve_chars', 1500),
                 'execution_mode': self.settings.get('execution_mode', 'ask'),

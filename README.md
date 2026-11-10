@@ -171,6 +171,7 @@ settings:
   default_route: deepseek
   temperature: 0.7
   max_tool_iterations: 30
+  max_iteration_extensions: 5
   keep_recent_tool_outputs: 20
   tool_stub_preserve_chars: 1500
   execution_mode: ask

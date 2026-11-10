@@ -132,6 +132,14 @@ class ChatAgent:
 
     """
 
+    #: Tag used to mark harness-generated messages in the history.
+    HARNESS_TAG = 'cascade'
+    #: Iteration budget used when the configuration does not define one.
+    DEFAULT_MAX_ITERATIONS = 30
+    #: Number of budget extensions allowed when the config omits the value.
+    DEFAULT_MAX_EXTENSIONS = 5
+
+
     def __init__(self, model_name: str | None = None, mode: ExecutionMode | str | None = None):
         """Create the router, register the fallback logger, load memory and security policy.
 
@@ -261,13 +269,109 @@ class ChatAgent:
             self.messages[0]['content'] = self.build_system_prompt()
 
 
+    def resolve_iteration_limits(self) -> tuple[int, int]:
+        """Read the iteration budget from the runtime configuration.
+
+        Both values are fetched from the ``config`` module on every turn, so
+        that a configuration reload triggered by ``/config`` takes effect
+        immediately. A budget below one is clamped with a warning: a zero
+        budget would make the loop a no-op and silently swallow the message.
+
+        Returns:
+            Tuple of (rounds per budget, number of allowed extensions).
+        """
+        raw_limit = getattr(config, 'MAX_TOOL_ITERATIONS', self.DEFAULT_MAX_ITERATIONS)
+        try:
+            limit = int(raw_limit)
+        except (TypeError, ValueError):
+            print(
+                f"\n\033[1;33m[CONFIG]\033[0m Invalid max_tool_iterations={raw_limit!r}; "
+                f"using {self.DEFAULT_MAX_ITERATIONS}.",
+                file=sys.stderr, flush=True,
+            )
+            limit = self.DEFAULT_MAX_ITERATIONS
+
+        if limit < 1:
+            print(
+                f"\n\033[1;33m[CONFIG]\033[0m max_tool_iterations={limit} would block every "
+                f"turn; using 1 instead.",
+                file=sys.stderr, flush=True,
+            )
+            limit = 1
+
+        raw_extensions = getattr(
+            config, 'MAX_ITERATION_EXTENSIONS', self.DEFAULT_MAX_EXTENSIONS
+        )
+        try:
+            max_extensions = max(0, int(raw_extensions))
+        except (TypeError, ValueError):
+            max_extensions = self.DEFAULT_MAX_EXTENSIONS
+
+        return limit, max_extensions
+
+
+    @staticmethod
+    def ask_iteration_extension(limit: int, total_rounds: int, extensions_left: int) -> bool:
+        """Ask the user whether to grant another iteration budget.
+
+        Only used outside YOLO mode. A closed stdin or Ctrl+C counts as a
+        refusal, so the agent never hangs in a non-interactive session.
+
+        Args:
+            limit: Size of the budget that has just been exhausted.
+            total_rounds: Model calls already made during this turn.
+            extensions_left: Extensions still available after this one.
+
+        Returns:
+            True when the user allows the turn to continue.
+        """
+        from prompt_toolkit import prompt
+
+        print(
+            f"\n\033[1;33m[ITERATION LIMIT]\033[0m Turn reached its budget of {limit} round(s) "
+            f"({total_rounds} in total). Extensions left: {extensions_left}."
+        )
+        try:
+            answer = prompt("Continue autonomous execution? [Y/n]: ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            return False
+        return answer in ('', 'y', 'yes')
+
+
+    def close_truncated_turn(self, reason: str) -> None:
+        """Report a truncated turn and keep the history API-valid.
+
+        A truncated turn normally ends on an unanswered ``role="tool"``
+        result. Sending a new user message right after it produces a history
+        that several OpenAI-compatible providers reject, and the original
+        silent ``break`` gave the user no feedback at all. A short assistant
+        note, explicitly tagged as harness output, closes the turn instead.
+
+        Args:
+            reason: Human readable explanation of the interruption.
+        """
+        print(f"\n\033[1;33m[ITERATION LIMIT]\033[0m {reason}")
+        if self.messages and self.messages[-1].get('role') == 'tool':
+            self.messages.append(
+                {
+                    'role': 'assistant',
+                    'content': f'[{self.HARNESS_TAG}] {reason}',
+                }
+            )
+
+
     def chat(self, user_input: str) -> None:
         """Send a user message and run the tool-calling loop.
 
         The response is streamed to the terminal. When the model requests
         tools, the calls are appended to the history together with their
-        results and the model is asked again, up to
-        config.MAX_TOOL_ITERATIONS rounds.
+        results and the model is asked again. One round is one model call, so
+        a single round may execute several tools in parallel. When the
+        configured budget (``max_tool_iterations``) is exhausted the agent
+        either extends it - silently in YOLO mode, after an explicit user
+        confirmation otherwise - up to ``max_iteration_extensions`` times, and
+        stops with a visible notice afterwards.
 
         Args:
             user_input: Raw text typed by the user.
@@ -276,30 +380,45 @@ class ChatAgent:
             None
         """
         self.messages.append({"role": "user", "content": user_input})
+        limit, max_extensions = self.resolve_iteration_limits()
+
         current_iteration = 0
-        limit = getattr(config, 'MAX_TOOL_ITERATIONS', 50)
+        extensions_used = 0
+        total_rounds = 0
 
-        while current_iteration < config.MAX_TOOL_ITERATIONS:
-            if limit > 0 and current_iteration >= limit:
+        while True:
+            # The budget is checked here, before the model call, so that a
+            # round always ends with a stored tool result or a final answer.
+            if current_iteration >= limit:
+                reason = (
+                    f'Turn stopped after {total_rounds} model round(s): '
+                    f'iteration budget of {limit} exhausted'
+                    + (f' and {max_extensions} extension(s) used.' if max_extensions else '.')
+                )
+
+                if extensions_used >= max_extensions:
+                    self.close_truncated_turn(reason)
+                    return
+
                 if self.mode == ExecutionMode.YOLO:
-                    print(f"\n\033[1;33m[YOLO]\033[0m Reached {limit} iterations. Auto-extending execution...")
-                    current_iteration = 0
-                else:
-                    # Интерактивное бесшовное продление по одной кнопке Enter:
-                    from prompt_toolkit import prompt
-                    print(f"\n\033[1;33m[ITERATION LIMIT]\033[0m Agent completed {limit} tool steps.")
-                    try:
-                        ans = prompt("Continue autonomous execution? [Y/n]: ").strip().lower()
-                        should_continue = ans in ('', 'y', 'yes')
-                    except (KeyboardInterrupt, EOFError):
-                        should_continue = False
+                    print(
+                        f"\n\033[1;33m[YOLO]\033[0m Budget of {limit} round(s) used "
+                        f"({total_rounds} round(s) in total). Auto-extending execution: "
+                        f"{extensions_used + 1}/{max_extensions}."
+                    )
+                elif not self.ask_iteration_extension(
+                    limit=limit,
+                    total_rounds=total_rounds,
+                    extensions_left=max_extensions - extensions_used,
+                ):
+                    self.close_truncated_turn(reason + ' Execution paused by user.')
+                    return
 
-                    if should_continue:
-                        current_iteration = 0
-                    else:
-                        print("Execution paused by user.")
-                        break
+                extensions_used += 1
+                current_iteration = 0
+
             current_iteration += 1
+            total_rounds += 1
 
             # Copy the history so the attached files can be injected into the
             # last user message without altering the stored conversation.
@@ -474,8 +593,5 @@ class ChatAgent:
             )
             return
 
-        print(
-            f"Tool iteration limit reached "
-            f"({config.MAX_TOOL_ITERATIONS})."
-        )
+        # Unreachable: every exit path above returns explicitly.
 
