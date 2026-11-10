@@ -277,8 +277,28 @@ class ChatAgent:
         """
         self.messages.append({"role": "user", "content": user_input})
         current_iteration = 0
+        limit = getattr(config, 'MAX_TOOL_ITERATIONS', 50)
 
         while current_iteration < config.MAX_TOOL_ITERATIONS:
+            if limit > 0 and current_iteration >= limit:
+                if self.mode == ExecutionMode.YOLO:
+                    print(f"\n\033[1;33m[YOLO]\033[0m Reached {limit} iterations. Auto-extending execution...")
+                    current_iteration = 0
+                else:
+                    # Интерактивное бесшовное продление по одной кнопке Enter:
+                    from prompt_toolkit import prompt
+                    print(f"\n\033[1;33m[ITERATION LIMIT]\033[0m Agent completed {limit} tool steps.")
+                    try:
+                        ans = prompt("Continue autonomous execution? [Y/n]: ").strip().lower()
+                        should_continue = ans in ('', 'y', 'yes')
+                    except (KeyboardInterrupt, EOFError):
+                        should_continue = False
+
+                    if should_continue:
+                        current_iteration = 0
+                    else:
+                        print("Execution paused by user.")
+                        break
             current_iteration += 1
 
             # Copy the history so the attached files can be injected into the
@@ -415,26 +435,27 @@ class ChatAgent:
                         if function_name not in self.available_functions:
                             function_result = f"Error: function {function_name} not found"
                         else:
-                            intercept_res = self.interceptor.intercept(
-                                tool_name=function_name,
-                                tool_args=function_args,
-                                current_mode=self.mode,
-                            )
-                            if not intercept_res.allowed:
-                                function_result = intercept_res.rejection_reason
-                                print(f'\033[33m[BLOCKED]\033[0m {intercept_res.rejection_reason}')
-                            else:
-                                target_function = self.available_functions[function_name]
-                                try:
+                            try:
+                                intercept_res = self.interceptor.intercept(
+                                    tool_name=function_name,
+                                    tool_args=function_args,
+                                    current_mode=self.mode,
+                                )
+                                if not intercept_res.allowed:
+                                    function_result = intercept_res.rejection_reason
+                                    print(f'\033[33m[BLOCKED]\033[0m {intercept_res.rejection_reason}')
+                                else:
+                                    target_function = self.available_functions[function_name]
+                                
                                     function_result = (
                                         target_function(**function_args)
                                         if function_args
                                         else target_function()
                                     )
-                                except Exception as exc:
-                                    function_result = (
-                                        f"Error while executing {function_name}: {exc}"
-                                    )
+                            except Exception as exc:
+                                function_result = (
+                                    f"Error while executing {function_name}: {exc}"
+                                )
 
                     self.messages.append(
                         {
