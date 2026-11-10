@@ -170,6 +170,11 @@ class HostRunner(BaseCommandRunner):
 
 class SandboxRunner(BaseCommandRunner):
     """Run shell commands inside an isolated Firejail environment.
+
+    FIREJAIL_SEEDS = {
+        '.bashrc', '.bash_logout', '.profile', '.inputrc,
+        '.Xauthority', '.config', '.local', '.cache'
+    }
     """
     def __init__(
             self,
@@ -194,6 +199,23 @@ class SandboxRunner(BaseCommandRunner):
         """
         super().__init__(project_dir, timeout_sec, max_output_chars)
         self.sandbox_home = Path(sandbox_home or os.path.expanduser('~'))
+
+
+    def _cleanup_firejail_seeds(self, before_entries: set[str]) -> None:
+        """Remove FIREJAIL_SEEDS from the sandbox"""
+        import shutil
+        try:
+            current_entries = set(os.listdir(self.project_dir))
+            created_by_firejail = (current_entries - before_entries) & self.FIREJAIL_SEEDS
+            for entry in created_by_firejail:
+                path = self.project_dir / entry
+                if path.is_dir() and not path.is_symlink():
+                    shutil.rmtree(path, ignore_errors=True)
+                else:
+                    path.inlink(missung_ok=True)
+        except Exception:
+            pass
+                    
 
 
     def run(self, command: str) -> CommandResult:
@@ -221,7 +243,9 @@ class SandboxRunner(BaseCommandRunner):
             'firejail',
             '--net=none',
             '--quiet',
-            '--no-new-privs',
+            '--X11=none',
+            '--nonewprivs',
+            '--caps.drop=all',
             '--private-tmp',
             f'--private={self.project_dir}',
             '--read-only=/',
@@ -234,10 +258,16 @@ class SandboxRunner(BaseCommandRunner):
             self._map_paths(command),
         ]
 
+        before_entries = set(os.listdir(self.project_dir))
+
         env = get_sanitized_env()
         env['TMPDIR'] = '/var/tmp'
 
-        return self._execute(firejail_cmd, env)
+        result = self._execute(firejail_cmd, env)
+
+        self._cleanup_firejail_seeds(before_entries)
+
+        return result
 
 
     def _map_paths(self, command: str) -> str:

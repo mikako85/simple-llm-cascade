@@ -70,7 +70,7 @@ class ConfigWizard:
                     self.default_route = settings_block.get('default_route', '')
                     for k, v in self.settings.items():
                         if k != 'default_route':
-                            self.settings[k] = v
+                            self.settings[k] = settings_block.get(k, v)
 
                 self.models = data.get('models', [])
                 self.fallbacks = data.get('fallbacks', [])
