@@ -233,7 +233,7 @@ def format_file_diff(file_path: str, new_content: str, max_diff_lines: int = 40)
     old_lines = old_content.splitlines(keepends=True)
     new_lines = new_content.splitlines(keepends=True)
 
-    diff = list(difflib.unified(
+    diff = list(difflib.unified_diff(
         old_lines,
         new_lines,
         fromfile=f'a/{file_path}',

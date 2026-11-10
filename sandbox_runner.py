@@ -243,7 +243,7 @@ class SandboxRunner(BaseCommandRunner):
             'firejail',
             '--net=none',
             '--quiet',
-            '--X11=none',
+            '--x11=none',
             '--nonewprivs',
             '--caps.drop=all',
             '--private-tmp',
